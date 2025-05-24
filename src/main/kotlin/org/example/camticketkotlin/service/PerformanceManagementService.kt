@@ -6,6 +6,7 @@ import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
 import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.exception.NotFoundException
+import org.example.camticketkotlin.exception.UnauthorizedAccessException
 import org.example.camticketkotlin.repository.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -14,7 +15,7 @@ import java.time.LocalDateTime
 
 
 @Service
-class PerformanceManagementController(
+class PerformanceManagementService(
     private val performancePostRepository: PerformancePostRepository,
     private val performanceScheduleRepository: PerformanceScheduleRepository,
     private val scheduleSeatRepository: ScheduleSeatRepository,
@@ -115,8 +116,8 @@ class PerformanceManagementController(
         )
     }
 
-    fun getOverviewByArtistId(artistId: Long): List<PerformanceOverviewResponse> {
-        val posts = performancePostRepository.findAllByUserId(artistId)
+    fun getOverviewByUser(user: User): List<PerformanceOverviewResponse> {
+        val posts = performancePostRepository.findAllByUserId(user.id!!)
 
         val latestTimes = performanceScheduleRepository
             .findLatestScheduleTimes(posts.map { it.id!! })
@@ -133,6 +134,38 @@ class PerformanceManagementController(
             )
         }
     }
+
+    @Transactional
+    fun deletePerformancePost(postId: Long, user: User) {
+        val post = performancePostRepository.findById(postId)
+            .orElseThrow { NotFoundException("해당 공연 게시글이 존재하지 않습니다.") }
+
+        if (post.user.id != user.id) {
+            throw UnauthorizedAccessException()
+        }
+
+        // 1. 프로필 이미지 삭제
+        s3Uploader.delete(post.profileImageUrl)
+
+        // 2. 상세 이미지들 삭제
+        val detailImages = performanceImageRepository.findByPerformancePost(post)
+        detailImages.forEach { s3Uploader.delete(it.imageUrl) }
+
+        // ✅ schedule-seat 삭제
+        val schedules = performanceScheduleRepository.findByPerformancePost(post)
+        scheduleSeatRepository.deleteAllByPerformanceScheduleIn(schedules)
+
+        // 3. 하위 연관 엔티티 삭제
+        ticketOptionRepository.deleteAllByPerformancePost(post)
+        performanceImageRepository.deleteAllByPerformancePost(post)
+        performanceScheduleRepository.deleteAllByPerformancePost(post)
+
+        // 4. 게시글 삭제
+        performancePostRepository.delete(post)
+    }
+
+
+
 
 
 }

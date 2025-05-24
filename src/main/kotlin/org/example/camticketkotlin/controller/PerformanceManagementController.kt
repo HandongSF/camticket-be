@@ -9,7 +9,7 @@ import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
 import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
-import org.example.camticketkotlin.service.PerformancePostService
+import org.example.camticketkotlin.service.PerformanceManagementService
 import org.example.camticketkotlin.swagger.SwaggerCreatePerformancePostResponses
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -19,8 +19,8 @@ import org.springframework.web.multipart.MultipartFile
 
 @RestController
 @RequestMapping("/camticket/api/performance-management")
-class PerformancePostController(
-    private val performancePostService: PerformancePostService
+class PerformanceManagementController(
+    private val performanceManagementService: PerformanceManagementService
 ) {
 
     @Operation(
@@ -44,7 +44,7 @@ class PerformancePostController(
 
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<Long>> {
-        val postId = performancePostService
+        val postId =  performanceManagementService
             .createPerformancePost(request, profileImage, detailImages, user)
             .id!!
 
@@ -54,7 +54,7 @@ class PerformancePostController(
     }
 
     @Operation(
-        summary = "공연 등록 오버뷰 조회",
+        summary = "공연 게시글 오버뷰 조회",
         description = "공연 관리 페이지에서 아티스트 ID로 공연들을 조회하고, 각 게시물에 대해 프로필 이미지, 식별 ID, 마지막 회차 정보를 제공합니다."
     )
     @ApiResponses(
@@ -66,9 +66,9 @@ class PerformancePostController(
     )
     @GetMapping("/overview")
     fun getArtistPerformanceOverview(
-        @RequestParam artistId: Long
+        @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<List<PerformanceOverviewResponse>>> {
-        val response = performancePostService.getOverviewByArtistId(artistId)
+        val response = performanceManagementService.getOverviewByUser(user)
         return ResponseEntity.ok(ApiWrapper.success(response))
     }
 
@@ -86,9 +86,28 @@ class PerformancePostController(
     fun getPerformancePostById(
         @PathVariable postId: Long
     ): ResponseEntity<ApiWrapper<PerformancePostDetailResponse>> {
-        val response = performancePostService.getPostById(postId)
+        val response = performanceManagementService.getPostById(postId)
         return ResponseEntity.ok(ApiWrapper.success(response))
     }
+
+    @Operation(summary = "공연 게시글 삭제", description = "postId와 로그인된 유저 정보로 삭제 수행")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "삭제 성공"),
+            ApiResponse(responseCode = "403", description = "삭제 권한 없음"),
+            ApiResponse(responseCode = "404", description = "해당 게시글 없음")
+        ]
+    )
+    @DeleteMapping("/{postId}")
+    fun deletePerformancePost(
+        @PathVariable postId: Long,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<Unit>> {
+        performanceManagementService.deletePerformancePost(postId, user)
+        return ResponseEntity.ok(ApiWrapper.success("공연 게시글이 삭제되었습니다."))
+    }
+
+
 }
 
 

@@ -6,5 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface PerformanceImageRepository : JpaRepository<PerformanceImage, Long> {
     fun findByPerformancePost(performancePost: PerformancePost): List<PerformanceImage>
+    fun deleteAllByPerformancePost(performancePost: PerformancePost)
 }
 

@@ -47,6 +47,8 @@ dependencies {
     // 테스트
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation("software.amazon.awssdk:s3:2.20.63")
+    implementation("software.amazon.awssdk:sts:2.20.63")
 }
 
 
