@@ -3,6 +3,8 @@ package org.example.camticketkotlin.service
 import org.example.camticketkotlin.domain.*
 import org.example.camticketkotlin.dto.PerformancePostCreateDto
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
+import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
+import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.repository.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -55,5 +57,62 @@ class PerformancePostService(
 
         return post
     }
+
+    fun getPostById(postId: Long): PerformancePostDetailResponse {
+        val post = performancePostRepository.findById(postId)
+            .orElseThrow { NotFoundException("해당 공연 게시글이 존재하지 않습니다.") }
+
+        val schedules = performanceScheduleRepository.findByPerformancePost(post)
+        val scheduleIndexMap = schedules.withIndex().associate { it.value.id!! to it.index }
+
+        val scheduleDtos = schedules.mapIndexed { index, schedule ->
+            PerformancePostDetailResponse.ScheduleDto(
+                scheduleIndex = index,
+                startTime = schedule.startTime.toString()
+            )
+        }
+
+        val seatsBySchedule = scheduleSeatRepository.findByPerformanceScheduleIn(schedules)
+            .groupBy { it.performanceSchedule.id!! }
+            .map { (scheduleId, seats) ->
+                PerformancePostDetailResponse.SeatUnavailableDto(
+                    scheduleIndex = scheduleIndexMap[scheduleId] ?: -1,
+                    codes = seats.map { it.seatCode }
+                )
+            }
+
+        val ticketOptions = ticketOptionRepository.findByPerformancePost(post)
+            .map {
+                PerformancePostDetailResponse.TicketOptionDto(
+                    name = it.name,
+                    price = it.price
+                )
+            }
+
+        val detailImages = performanceImageRepository.findByPerformancePost(post)
+            .map { it.imageUrl }
+
+        return PerformancePostDetailResponse(
+            id = post.id!!,
+            title = post.title,
+            category = post.category.name,
+            location = post.location.name,
+            ticketType = post.ticketType.name,
+            maxTicketsPerUser = post.maxTicketsPerUser,
+            backAccount = post.backAccount,
+            reservationStartAt = post.reservationStartAt.toString(),
+            reservationEndAt = post.reservationEndAt.toString(),
+            timeNotice = post.timeNotice,
+            priceNotice = post.priceNotice,
+            reservationNotice = post.reservationNotice,
+            profileImageUrl = post.profileImageUrl,
+            detailImageUrls = detailImages,
+            schedules = scheduleDtos,
+            seatUnavailableCodesPerSchedule = seatsBySchedule,
+            ticketOptions = ticketOptions
+        )
+    }
+
+
 
 }
