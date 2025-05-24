@@ -1,13 +1,7 @@
-package org.example.camticketkotlin.controller.response;
+package org.example.camticketkotlin.controller.response
 
-import lombok.Builder;
-import lombok.Getter;
-
-
-@Builder
-@Getter
-public class KakaoLoginResponse {
-    private String name;
-    private String profileImageUrl;
-    private String email;
-}
+data class KakaoLoginResponse(
+        val name: String?,               // 허용
+        val profileImageUrl: String?,
+        val email: String?
+)

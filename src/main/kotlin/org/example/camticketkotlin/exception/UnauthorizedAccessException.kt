@@ -1,9 +1,7 @@
-package org.example.camticket.exception;
+package org.example.camticketkotlin.exception
 
-public class UnauthorizedAccessException extends RuntimeException{
-    private static final String MESSAGE = "접근 권한이 없습니다.";
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.ResponseStatus
 
-    public UnauthorizedAccessException() {
-        super(MESSAGE);
-    }
-}
+@ResponseStatus(HttpStatus.FORBIDDEN)
+class UnauthorizedAccessException : RuntimeException("접근 권한이 없습니다.")

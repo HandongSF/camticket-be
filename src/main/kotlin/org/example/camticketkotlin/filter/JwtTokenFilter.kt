@@ -1,84 +1,106 @@
-package org.example.camticket.filter;
+package org.example.camticketkotlin.filter
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import org.example.camticket.domain.User;
-import org.example.camticket.exception.DoNotLoginException;
-import org.example.camticket.exception.WrongTokenException;
-import org.example.camticket.service.AuthService;
-import org.example.camticket.util.JwtUtil;
-import org.springframework.http.HttpHeaders;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.web.filter.OncePerRequestFilter;
+import jakarta.servlet.FilterChain
+import jakarta.servlet.ServletException
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
+import org.example.camticketkotlin.domain.User
+import org.example.camticketkotlin.exception.WrongTokenException
+import org.example.camticketkotlin.service.AuthService
+import org.example.camticketkotlin.util.JwtUtil
+import org.example.camticketkotlin.exception.DoNotLoginException
+import org.springframework.http.HttpHeaders
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource
+import org.springframework.web.filter.OncePerRequestFilter
+import org.slf4j.LoggerFactory
 
-import java.io.IOException;
-import java.util.List;
+private val logger = LoggerFactory.getLogger(JwtTokenFilter::class.java)
 
-@RequiredArgsConstructor
-public class JwtTokenFilter extends OncePerRequestFilter {
-    private final AuthService authService;
-    private final String SECRET_KEY;
-    private final JwtUtil jwtUtil;
+class JwtTokenFilter(
+        private val authService: AuthService,
+        private val secretKey: String,
+        private val jwtUtil: JwtUtil
+) : OncePerRequestFilter() {
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain)
-            throws ServletException, IOException {
+    override fun doFilterInternal(
+            request: HttpServletRequest,
+            response: HttpServletResponse,
+            filterChain: FilterChain
+    ) {
+        val uri = request.requestURI
 
-        String uri = request.getRequestURI();
-
-        if (uri.startsWith("/error") ||
-                uri.startsWith("/camticket/auth/") ||
-                uri.startsWith("/camticket/every") ||
-                uri.equals("/")
+        if (
+            uri.startsWith("/error") ||
+            uri.startsWith("/swagger-ui") ||
+            uri.startsWith("/v3/api-docs") ||
+            uri.startsWith("/swagger-resources") || // (혹시 사용하는 경우)
+            uri.startsWith("/webjars") ||           // (정적 리소스)
+            uri.startsWith("/camticket/auth/") ||
+            uri.startsWith("/camticket/every") ||
+            uri == "/"
         ) {
-            filterChain.doFilter(request, response);
-            return;
+            filterChain.doFilter(request, response)
+            return
         }
 
-        String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+
+        val authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION)
+        logger.debug("Authorization header: $authorizationHeader")
 
         if (authorizationHeader == null) {
-            String paramToken = request.getParameter("token");
+            val paramToken = request.getParameter("token")
             if (paramToken == null) {
-                throw new DoNotLoginException();
+                throw DoNotLoginException()
             }
-            processAccessToken(request, response, filterChain, paramToken);
-            return;
+            processAccessToken(request, response, filterChain, paramToken)
+            return
         }
 
         if (!authorizationHeader.startsWith("Bearer ")) {
-            throw new WrongTokenException("Bearer 로 시작하지 않는 토큰입니다.");
+            logger.warn("잘못된 토큰 형식: $authorizationHeader")
+            throw WrongTokenException("Bearer 로 시작하지 않는 토큰입니다.")
         }
 
-        String token = authorizationHeader.split(" ")[1];
-        processAccessToken(request, response, filterChain, token);
+        val token = authorizationHeader.split(" ")[1]
+        processAccessToken(request, response, filterChain, token)
     }
 
-    private void processAccessToken(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain, String token)
-            throws ServletException, IOException {
-        User loginUser = authService.getLoginUser(JwtUtil.getUserId(token, SECRET_KEY));
-        setAuthenticationForUser(request, loginUser);
-        filterChain.doFilter(request, response);
+    private fun processAccessToken(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain,
+        token: String
+    ) {
+        try {
+            logger.debug("Access token 수신: $token")
+            val userId = JwtUtil.getUserId(token, secretKey)
+            logger.debug("토큰에서 추출한 userId: $userId")
+
+            val loginUser = authService.getLoginUser(userId)
+            logger.debug("DB에서 조회된 사용자: ${loginUser.id}, ${loginUser.name}")
+
+            setAuthenticationForUser(request, loginUser)
+        } catch (ex: Exception) {
+            logger.warn("JWT 인증 실패: ${ex.message}", ex)
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "로그인이 필요합니다.")
+            return
+        }
+
+        filterChain.doFilter(request, response)
     }
 
-    private void setAuthenticationForUser(HttpServletRequest request, User user) {
-        UsernamePasswordAuthenticationToken authenticationToken =
-                new UsernamePasswordAuthenticationToken(
-                        user,
-                        null,
-                        List.of(new SimpleGrantedAuthority(user.getRole().name()))
-                );
-        authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-        SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+
+    private fun setAuthenticationForUser(request: HttpServletRequest, user: User) {
+        logger.debug("SecurityContextHolder에 인증 정보 설정: userId=${user.id}, role=${user.role}")
+        val authenticationToken = UsernamePasswordAuthenticationToken(
+                user,
+                null,
+                listOf(SimpleGrantedAuthority(user.role.name))
+        )
+        authenticationToken.details = WebAuthenticationDetailsSource().buildDetails(request)
+        SecurityContextHolder.getContext().authentication = authenticationToken
     }
 }

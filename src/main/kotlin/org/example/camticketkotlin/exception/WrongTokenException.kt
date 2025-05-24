@@ -1,7 +1,4 @@
-package org.example.camticket.exception;
+package org.example.camticketkotlin.exception;
 
-public class WrongTokenException extends RuntimeException {
-    public WrongTokenException(String message) {
-        super(message);
-    }
-}
+class WrongTokenException(message: String) : RuntimeException(message)
+

@@ -1,4 +1,4 @@
-package org.example.camticket.domain
+package org.example.camticketkotlin.domain
 
 import jakarta.persistence.Column
 import jakarta.persistence.EntityListeners

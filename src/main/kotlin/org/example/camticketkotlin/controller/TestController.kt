@@ -1,4 +1,4 @@
-package org.example.camticket.controller
+package org.example.camticketkotlin.controller
 
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpHeaders

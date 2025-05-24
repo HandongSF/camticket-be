@@ -1,17 +1,17 @@
-package org.example.camticket.controller
+package org.example.camticketkotlin.controller
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.example.camticket.controller.response.KakaoLoginResponse
-import org.example.camticket.dto.UserDto
-import org.example.camticket.service.AuthService
-import org.example.camticket.service.KakaoService
-import org.example.camticket.util.JwtUtil
+import org.example.camticketkotlin.controller.response.KakaoLoginResponse
+import org.example.camticketkotlin.util.JwtUtil
+import org.example.camticketkotlin.service.AuthService
+import org.example.camticketkotlin.service.KakaoService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.example.camticketkotlin.dto.UserDto
 
 @RestController
 class AuthController(
@@ -44,7 +44,7 @@ class AuthController(
         )
 
         val jwtToken = jwtUtil.createToken(
-                userDto.id,
+                userDto.id!!,
                 secretKey,
                 expireTimeMs,
                 expireRefreshTimeMs

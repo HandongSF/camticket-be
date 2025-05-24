@@ -1,4 +1,4 @@
-package org.example.camticket.domain
+package org.example.camticketkotlin.domain.enums
 
 enum class Role {
     ROLE_USER,
