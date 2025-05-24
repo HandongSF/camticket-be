@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.example.camticketkotlin.common.ApiResponse as ApiWrapper
 import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
+import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.service.PerformancePostService
 import org.example.camticketkotlin.swagger.SwaggerCreatePerformancePostResponses
@@ -17,21 +18,14 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 
 @RestController
-@ApiResponses(
-    value = [
-        ApiResponse(responseCode = "201", description = "공연 게시글이 성공적으로 생성됨"),
-        ApiResponse(responseCode = "400", description = "잘못된 요청 데이터"),
-        ApiResponse(responseCode = "401", description = "인증 필요 또는 토큰 만료")
-    ]
-)
-@RequestMapping("camticket/api/performance-posts")
+@RequestMapping("/camticket/api/performance-management")
 class PerformancePostController(
     private val performancePostService: PerformancePostService
 ) {
 
     @Operation(
         summary = "공연 게시글 생성",
-        description = "프로필 이미지는 필수이며, 상세 이미지는 선택입니다."
+        description = "아티스트가 공연 게시글을 등록합니다. 프로필 이미지는 필수이며, 상세 이미지는 선택입니다."
     )
     @SwaggerCreatePerformancePostResponses
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -59,7 +53,29 @@ class PerformancePostController(
             .body(ApiWrapper.created("공연 게시글이 등록되었습니다.", postId))
     }
 
-    @Operation(summary = "공연 게시글 단건 조회")
+    @Operation(
+        summary = "공연 등록 오버뷰 조회",
+        description = "공연 관리 페이지에서 아티스트 ID로 공연들을 조회하고, 각 게시물에 대해 프로필 이미지, 식별 ID, 마지막 회차 정보를 제공합니다."
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "조회 성공"),
+            ApiResponse(responseCode = "400", description = "잘못된 아티스트 ID"),
+            ApiResponse(responseCode = "404", description = "등록된 공연이 없습니다.")
+        ]
+    )
+    @GetMapping("/overview")
+    fun getArtistPerformanceOverview(
+        @RequestParam artistId: Long
+    ): ResponseEntity<ApiWrapper<List<PerformanceOverviewResponse>>> {
+        val response = performancePostService.getOverviewByArtistId(artistId)
+        return ResponseEntity.ok(ApiWrapper.success(response))
+    }
+
+    @Operation(
+        summary = "공연 게시글 상세 조회",
+        description = "식별번호(postId)를 기반으로 해당 공연 게시글의 전체 정보를 조회합니다."
+    )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -73,7 +89,8 @@ class PerformancePostController(
         val response = performancePostService.getPostById(postId)
         return ResponseEntity.ok(ApiWrapper.success(response))
     }
-
-
-
 }
+
+
+
+

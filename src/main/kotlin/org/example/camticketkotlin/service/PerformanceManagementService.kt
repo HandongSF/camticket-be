@@ -3,16 +3,18 @@ package org.example.camticketkotlin.service
 import org.example.camticketkotlin.domain.*
 import org.example.camticketkotlin.dto.PerformancePostCreateDto
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
+import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.repository.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+import java.time.LocalDateTime
 
 
 @Service
-class PerformancePostService(
+class PerformanceManagementController(
     private val performancePostRepository: PerformancePostRepository,
     private val performanceScheduleRepository: PerformanceScheduleRepository,
     private val scheduleSeatRepository: ScheduleSeatRepository,
@@ -113,6 +115,24 @@ class PerformancePostService(
         )
     }
 
+    fun getOverviewByArtistId(artistId: Long): List<PerformanceOverviewResponse> {
+        val posts = performancePostRepository.findAllByUserId(artistId)
+
+        val latestTimes = performanceScheduleRepository
+            .findLatestScheduleTimes(posts.map { it.id!! })
+            .associate { (postId, latestTime) ->
+                postId as Long to (latestTime as LocalDateTime).toString()
+            }
+
+        return posts.mapNotNull { post ->
+            val lastTime = latestTimes[post.id] ?: return@mapNotNull null
+            PerformanceOverviewResponse(
+                postId = post.id!!,
+                profileImageUrl = post.profileImageUrl,
+                lastScheduleTime = lastTime
+            )
+        }
+    }
 
 
 }
