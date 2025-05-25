@@ -12,5 +12,7 @@ data class PerformancePostOverviewResponse(
     val firstScheduleStartTime: LocalDateTime,
     val location: String,
     val userId: Long,
-    val category: PerformanceCategory // 추가
+    val category: PerformanceCategory,
+    val isClosed: Boolean
+
 )

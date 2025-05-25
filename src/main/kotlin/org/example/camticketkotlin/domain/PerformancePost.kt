@@ -53,6 +53,9 @@ class PerformancePost(
     @Column(nullable = false, columnDefinition = "TEXT")
     var profileImageUrl: String,
 
+    @Column(name = "is_closed", nullable = false)
+    var isClosed: Boolean = false,
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     var user: User,

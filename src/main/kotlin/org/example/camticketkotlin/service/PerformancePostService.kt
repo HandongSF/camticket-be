@@ -12,7 +12,8 @@ class PerformancePostService(
 
     @Transactional(readOnly = true)
     fun getAllPerformancesOverview(): List<PerformancePostOverviewResponse> {
-        val posts = performancePostRepository.findAll() // 혹은 JOIN FETCH 버전
+        val posts = performancePostRepository.findAll()
+            .filter { !it.isClosed } // isClosed == false 인 것만
 
         return posts.map { post ->
             val firstSchedule = post.schedules.minByOrNull { it.startTime }
@@ -27,9 +28,12 @@ class PerformancePostService(
                 firstScheduleStartTime = firstSchedule.startTime,
                 location = post.location.name,
                 userId = post.user.id!!,
-                category = post.category
+                category = post.category,
+                isClosed = post.isClosed // ← 여기도 추가
             )
+
         }
     }
+
 
 }
