@@ -24,9 +24,9 @@ class ArtistController(
             ApiResponse(responseCode = "500", description = "서버 오류입니다.")
         ]
     )
-    @GetMapping("/detail")
+    @GetMapping("/detail/{userId}")
     fun getArtistPerformances(
-        @RequestParam
+        @PathVariable
         @Parameter(description = "조회할 아티스트의 유저 ID", example = "1")
         userId: Long
     ): ResponseEntity<ApiWrapper<List<ArtistPerformanceSummaryResponse>>> {
