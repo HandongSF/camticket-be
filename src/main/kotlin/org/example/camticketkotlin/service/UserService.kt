@@ -1,6 +1,7 @@
 package org.example.camticketkotlin.service
 
 import org.example.camticketkotlin.domain.User
+import org.example.camticketkotlin.dto.UserDto
 import org.example.camticketkotlin.dto.request.UserProfileUpdateRequest
 import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.repository.UserRepository
@@ -49,8 +50,13 @@ class UserService (
         return uploadedUrl
     }
 
+    @Transactional(readOnly = true)
+    fun getUserDtoById(userId: Long): UserDto {
+        val user = userRepository.findById(userId)
+            .orElseThrow { NotFoundException("해당 유저가 존재하지 않습니다.") }
 
-
+        return UserDto.toDto(user)
+    }
 
 
 }

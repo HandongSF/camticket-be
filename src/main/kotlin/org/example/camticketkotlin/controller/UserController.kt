@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.example.camticketkotlin.domain.User
+import org.example.camticketkotlin.dto.UserDto
 import org.example.camticketkotlin.dto.request.UserProfileUpdateRequest
 import org.example.camticketkotlin.service.UserService
 import org.springframework.http.HttpStatus
@@ -42,6 +44,22 @@ class UserController (
     ): ResponseEntity<ApiWrapper<String>> {
         val imageUrl = userService.updateProfileImage(user, image)
         return ResponseEntity.ok(ApiWrapper.success(imageUrl, "프로필 이미지가 성공적으로 수정되었습니다."))
+    }
+
+    @Operation(summary = "유저 정보 조회", description = "유저 ID로 유저 정보를 조회합니다.")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "유저 정보 조회 성공"),
+            ApiResponse(responseCode = "404", description = "해당 유저가 존재하지 않음")
+        ]
+    )
+    @GetMapping("/{userId}")
+    fun getUserInfo(
+        @Parameter(description = "조회할 유저의 ID")
+        @PathVariable userId: Long
+    ): ResponseEntity<ApiWrapper<UserDto>> {
+        val userDto = userService.getUserDtoById(userId)
+        return ResponseEntity.ok(ApiWrapper.success(userDto, "유저 정보를 성공적으로 조회했습니다."))
     }
 
 }
