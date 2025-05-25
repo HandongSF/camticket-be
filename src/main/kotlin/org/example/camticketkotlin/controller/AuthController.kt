@@ -24,9 +24,6 @@ class AuthController(
 
         @Value("\${custom.jwt.expire-time-ms}")
         private val expireTimeMs: Long,
-
-        @Value("\${custom.jwt.refresh-expire-time-ms}")
-        private val expireRefreshTimeMs: Long
 ) {
 
     @GetMapping("/camticket/auth/kakao-login")
@@ -44,11 +41,12 @@ class AuthController(
         )
 
         val jwtToken = jwtUtil.createToken(
-                userDto.id!!,
-                secretKey,
-                expireTimeMs,
-                expireRefreshTimeMs
+            userDto.id!!,
+            userDto.role,
+            secretKey,
+            expireTimeMs
         )
+
 
         response.setHeader("Authorization", "Bearer ${jwtToken[0]}")
 
@@ -60,4 +58,6 @@ class AuthController(
                 )
         )
     }
+
+
 }

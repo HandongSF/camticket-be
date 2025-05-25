@@ -1,6 +1,7 @@
 package org.example.camticketkotlin.dto
 
 import org.example.camticketkotlin.domain.User
+import org.example.camticketkotlin.domain.enums.Role
 
 // data class ➝ 데이터를 담는 그릇
 data class UserDto(
@@ -12,7 +13,8 @@ data class UserDto(
         var email: String? = null,
         var profileImageUrl: String? = null,
         val introduction: String? = null,
-        var bankAccount: String? = null
+        var bankAccount: String? = null,
+        val role: Role // ← 추가
 ) {
     // 자바의 static 메서드랑 똑같은 기능
     companion object {
@@ -27,7 +29,8 @@ data class UserDto(
                     email = user.email,
                     profileImageUrl = user.profileImageUrl,
                     introduction = user.introduction,
-                    bankAccount = user.bankAccount
+                    bankAccount = user.bankAccount,
+                    role = user.role
             )
         }
 

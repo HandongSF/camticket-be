@@ -2,6 +2,7 @@ package org.example.camticketkotlin.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.example.camticketkotlin.domain.enums.Role
 import org.example.camticketkotlin.dto.UserDto
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.*
@@ -72,7 +73,8 @@ class KakaoService(
                 name = nickname,
                 email = email,
                 profileImageUrl = profileImageUrl,
-                introduction = ""
+                introduction = "",
+                role = Role.ROLE_USER // 기본 사용자 권한 지정
         )
     }
 }

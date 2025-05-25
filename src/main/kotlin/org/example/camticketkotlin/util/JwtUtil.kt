@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims
 import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.SignatureAlgorithm
+import org.example.camticketkotlin.domain.enums.Role
 import org.example.camticketkotlin.exception.WrongTokenException
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -18,21 +19,23 @@ class JwtUtil {
     @Value("\${custom.jwt.refresh-expire-time-ms}")
     private val expireRefreshTimeMs: Long = 0
 
-    fun createToken(userId: Long, secretKey: String, expireTimeMs: Long, unused: Long): List<String> {
+    fun createToken(userId: Long, role: Role, secretKey: String, expireTimeMs: Long): List<String> {
         val claims: Claims = Jwts.claims().apply {
             this["userId"] = userId
+            this["role"] = role.name // 여기서 오류 해결됨
         }
 
         val accessToken = Jwts.builder()
-                .setClaims(claims)
-                .claim("tokenType", "ACCESS")
-                .setIssuedAt(Date(System.currentTimeMillis()))
-                .setExpiration(Date(System.currentTimeMillis() + expireTimeMs))
-                .signWith(SignatureAlgorithm.HS256, secretKey)
-                .compact()
+            .setClaims(claims)
+            .claim("tokenType", "ACCESS")
+            .setIssuedAt(Date(System.currentTimeMillis()))
+            .setExpiration(Date(System.currentTimeMillis() + expireTimeMs))
+            .signWith(SignatureAlgorithm.HS256, secretKey)
+            .compact()
 
         return listOf(accessToken)
     }
+
 
     companion object {
         fun getUserId(token: String, secretKey: String): Long {
