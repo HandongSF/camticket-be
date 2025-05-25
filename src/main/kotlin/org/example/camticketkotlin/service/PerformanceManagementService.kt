@@ -4,7 +4,7 @@ import org.example.camticketkotlin.domain.*
 import org.example.camticketkotlin.dto.PerformancePostCreateDto
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
 import org.example.camticketkotlin.dto.request.PerformancePostUpdateRequest
-import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
+import org.example.camticketkotlin.dto.response.PerformanceManagementOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.exception.UnauthorizedAccessException
@@ -124,7 +124,7 @@ class PerformanceManagementService(
         )
     }
 
-    fun getOverviewByUser(user: User): List<PerformanceOverviewResponse> {
+    fun getOverviewByUser(user: User): List<PerformanceManagementOverviewResponse> {
         val posts = performancePostRepository.findAllByUserId(user.id!!)
 
         val latestTimes = performanceScheduleRepository
@@ -135,7 +135,7 @@ class PerformanceManagementService(
 
         return posts.mapNotNull { post ->
             val lastTime = latestTimes[post.id] ?: return@mapNotNull null
-            PerformanceOverviewResponse(
+            PerformanceManagementOverviewResponse(
                 postId = post.id!!,
                 profileImageUrl = post.profileImageUrl,
                 lastScheduleTime = lastTime

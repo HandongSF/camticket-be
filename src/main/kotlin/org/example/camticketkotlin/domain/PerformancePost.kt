@@ -55,7 +55,16 @@ class PerformancePost(
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
-    var user: User
+    var user: User,
+
+    @OneToMany(
+    mappedBy = "performancePost",
+    fetch = FetchType.LAZY,
+    cascade = [CascadeType.ALL],
+    orphanRemoval = true
+    )
+    val schedules: List<PerformanceSchedule> = mutableListOf()
+
 ) : BaseEntity() {
 
     fun updateFromDto(dto: PerformancePostUpdateRequest) {

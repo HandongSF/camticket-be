@@ -9,7 +9,7 @@ import org.example.camticketkotlin.common.ApiResponse as ApiWrapper
 import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
 import org.example.camticketkotlin.dto.request.PerformancePostUpdateRequest
-import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
+import org.example.camticketkotlin.dto.response.PerformanceManagementOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.service.PerformanceManagementService
 import org.example.camticketkotlin.swagger.SwaggerCreatePerformancePostResponses
@@ -69,7 +69,7 @@ class PerformanceManagementController(
     @GetMapping("/overview")
     fun getArtistPerformanceOverview(
         @AuthenticationPrincipal user: User
-    ): ResponseEntity<ApiWrapper<List<PerformanceOverviewResponse>>> {
+    ): ResponseEntity<ApiWrapper<List<PerformanceManagementOverviewResponse>>> {
         val response = performanceManagementService.getOverviewByUser(user)
         return ResponseEntity.ok(ApiWrapper.success(response))
     }
