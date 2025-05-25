@@ -25,12 +25,17 @@ class User private constructor(
         @Column(nullable = false, columnDefinition = "TEXT")
         var profileImageUrl: String? = null,
 
+        @Column(nullable = true, length = 500)
+        var introduction: String? = null,
+
         @Column(nullable = true, length = 100)
-        var bankAccount: String,
+        var bankAccount: String? = null,
 
         @Enumerated(EnumType.STRING)
         @Column(nullable = false)
         val role: Role
+
+
 ) : BaseEntity() {
 
     companion object {
@@ -41,6 +46,7 @@ class User private constructor(
                 nickName = dto.nickName ?: "",
                 email = requireNotNull(dto.email),
                 profileImageUrl = requireNotNull(dto.profileImageUrl),
+                introduction = dto.introduction ?: "",
                 bankAccount = dto.bankAccount ?: "",
                 role = Role.ROLE_USER
             )

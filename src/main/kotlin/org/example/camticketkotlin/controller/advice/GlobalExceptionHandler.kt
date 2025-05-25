@@ -1,11 +1,11 @@
 package org.example.camticketkotlin.controller.advice
 
+import io.swagger.v3.oas.annotations.Hidden
 import org.example.camticketkotlin.controller.response.ExceptionResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
-
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
@@ -20,9 +20,10 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception::class)
     fun handleGeneralException(e: Exception): ResponseEntity<ExceptionResponse> {
+        e.printStackTrace()  // 💥 로그 확인용
         val response = ExceptionResponse(
             error = HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase,
-            message = "서버 내부 오류가 발생했습니다."
+            message = e.message ?: "서버 내부 오류가 발생했습니다."
         )
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response)
     }

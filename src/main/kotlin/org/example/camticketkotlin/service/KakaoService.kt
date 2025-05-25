@@ -71,7 +71,8 @@ class KakaoService(
                 kakaoId = id,
                 name = nickname,
                 email = email,
-                profileImageUrl = profileImageUrl
+                profileImageUrl = profileImageUrl,
+                introduction = ""
         )
     }
 }
