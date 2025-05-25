@@ -4,9 +4,11 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
+import jakarta.validation.Valid
 import org.example.camticketkotlin.common.ApiResponse as ApiWrapper
 import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.request.PerformancePostCreateRequest
+import org.example.camticketkotlin.dto.request.PerformancePostUpdateRequest
 import org.example.camticketkotlin.dto.response.PerformanceOverviewResponse
 import org.example.camticketkotlin.dto.response.PerformancePostDetailResponse
 import org.example.camticketkotlin.service.PerformanceManagementService
@@ -107,6 +109,41 @@ class PerformanceManagementController(
         return ResponseEntity.ok(ApiWrapper.success("공연 게시글이 삭제되었습니다."))
     }
 
+
+    @Operation(
+        summary = "공연 게시글 수정",
+        description = "아티스트가 기존 공연 게시글을 수정합니다. 기존 프로필 이미지는 수정할 수 없고, 상세 이미지는 최대 4장까지 추가만 가능합니다."
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "수정 성공"),
+            ApiResponse(responseCode = "400", description = "잘못된 요청 (상세 이미지 초과 등)"),
+            ApiResponse(responseCode = "403", description = "권한 없음"),
+            ApiResponse(responseCode = "404", description = "해당 게시글 없음")
+        ]
+    )
+    @PutMapping(
+        value = ["/{postId}"],
+        consumes = [MediaType.MULTIPART_FORM_DATA_VALUE]
+    )
+    fun updatePerformancePost(
+        @PathVariable postId: Long,
+
+        @RequestPart("request")
+        @Parameter(description = "공연 수정 정보 JSON")
+        request: @Valid PerformancePostUpdateRequest,
+
+        @RequestPart("newDetailImages", required = false)
+        @Parameter(description = "새로 추가할 상세 이미지 (기존 이미지는 삭제 불가)", required = false)
+        newDetailImages: List<MultipartFile> = emptyList(),
+
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<Long>> {
+        val updatedPostId = performanceManagementService
+            .updatePerformancePost(postId, request, newDetailImages, user)
+
+        return ResponseEntity.ok(ApiWrapper.success(updatedPostId, "공연 게시글이 수정되었습니다."))
+    }
 
 }
 

@@ -5,6 +5,7 @@ import org.example.camticketkotlin.domain.enums.PerformanceCategory
 import org.example.camticketkotlin.domain.enums.PerformanceLocation
 import org.example.camticketkotlin.domain.enums.TicketType
 import org.example.camticketkotlin.dto.PerformancePostCreateDto
+import org.example.camticketkotlin.dto.request.PerformancePostUpdateRequest
 import java.time.LocalDateTime
 
 @Entity
@@ -57,6 +58,20 @@ class PerformancePost(
     var user: User
 ) : BaseEntity() {
 
+    fun updateFromDto(dto: PerformancePostUpdateRequest) {
+        this.title = dto.title
+        this.category = dto.category
+        this.location = dto.location
+        this.ticketType = dto.ticketType
+        this.maxTicketsPerUser = dto.maxTicketsPerUser
+        this.backAccount = dto.backAccount
+        this.reservationStartAt = dto.reservationStartAt
+        this.reservationEndAt = dto.reservationEndAt
+        this.timeNotice = dto.timeNotice
+        this.priceNotice = dto.priceNotice
+        this.reservationNotice = dto.reservationNotice
+    }
+
     companion object {
         fun toEntity(dto: PerformancePostCreateDto): PerformancePost {
             return PerformancePost(
@@ -76,5 +91,6 @@ class PerformancePost(
             )
         }
     }
+
 }
 
