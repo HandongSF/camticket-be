@@ -26,7 +26,8 @@ class PerformancePostService(
                 reservationEndAt = post.reservationEndAt,
                 firstScheduleStartTime = firstSchedule.startTime,
                 location = post.location.name,
-                userId = post.user.id!!
+                userId = post.user.id!!,
+                category = post.category
             )
         }
     }

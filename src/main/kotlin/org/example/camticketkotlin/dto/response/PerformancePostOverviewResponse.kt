@@ -1,5 +1,6 @@
 package org.example.camticketkotlin.dto.response
 
+import org.example.camticketkotlin.domain.enums.PerformanceCategory
 import java.time.LocalDateTime
 
 data class PerformancePostOverviewResponse(
@@ -10,5 +11,6 @@ data class PerformancePostOverviewResponse(
     val reservationEndAt: LocalDateTime,
     val firstScheduleStartTime: LocalDateTime,
     val location: String,
-    val userId: Long
+    val userId: Long,
+    val category: PerformanceCategory // 추가
 )
