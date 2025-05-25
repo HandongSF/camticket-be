@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.UserDto
 import org.example.camticketkotlin.dto.request.UserProfileUpdateRequest
+import org.example.camticketkotlin.dto.response.ArtistUserOverviewResponse
 import org.example.camticketkotlin.service.UserService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -60,6 +61,19 @@ class UserController (
     ): ResponseEntity<ApiWrapper<UserDto>> {
         val userDto = userService.getUserDtoById(userId)
         return ResponseEntity.ok(ApiWrapper.success(userDto, "유저 정보를 성공적으로 조회했습니다."))
+    }
+
+    @Operation(summary = "ROLE_MANAGER 유저 목록 조회", description = "공연을 등록할 수 있는 동아리 관리자(ROLE_MANAGER) 권한을 가진 유저들의 기본 정보를 조회합니다.")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "성공적으로 유저 목록을 조회했습니다."),
+            ApiResponse(responseCode = "500", description = "서버 오류입니다.")
+        ]
+    )
+    @GetMapping("/managers")
+    fun getArtistManagers(): ResponseEntity<ApiWrapper<List<ArtistUserOverviewResponse>>> {
+        val result = userService.getAllManagerUsers()
+        return ResponseEntity.ok(ApiWrapper.success(result, "동아리 관리자 목록을 조회했습니다."))
     }
 
 }

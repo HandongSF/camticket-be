@@ -3,20 +3,22 @@ package org.example.camticketkotlin.service
 import org.example.camticketkotlin.domain.User
 import org.example.camticketkotlin.dto.UserDto
 import org.example.camticketkotlin.dto.request.UserProfileUpdateRequest
+import org.example.camticketkotlin.dto.response.ArtistUserOverviewResponse
 import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+import org.example.camticketkotlin.domain.enums.Role
+
 
 @Service
 class UserService (
     private val userRepository: UserRepository,
     private val s3Uploader: S3Uploader
 
-)
-{
+) {
     companion object {
         private val logger = LoggerFactory.getLogger(UserService::class.java)
     }
@@ -26,10 +28,26 @@ class UserService (
         val foundUser = userRepository.findById(user.id!!)
             .orElseThrow { NotFoundException("해당 유저가 존재하지 않습니다.") }
 
-        request.nickName?.let { foundUser.nickName = it }
-        request.introduction?.let { foundUser.introduction = it }
-    }
+        request.nickName?.let { newNickName ->
+            if (newNickName.length < 2) {
+                throw IllegalArgumentException("닉네임은 최소 2글자 이상이어야 합니다.")
+            }
 
+            // 본인의 닉네임이 아닌데 중복되는 경우
+            val isDuplicate = userRepository.existsByNickName(newNickName) &&
+                    foundUser.nickName != newNickName
+
+            if (isDuplicate) {
+                throw IllegalArgumentException("이미 사용 중인 닉네임입니다.")
+            }
+
+            foundUser.nickName = newNickName
+        }
+
+        request.introduction?.let {
+            foundUser.introduction = it
+        }
+    }
 
     @Transactional
     fun updateProfileImage(user: User, newImage: MultipartFile): String {
@@ -58,5 +76,15 @@ class UserService (
         return UserDto.toDto(user)
     }
 
+    @Transactional(readOnly = true)
+    fun getAllManagerUsers(): List<ArtistUserOverviewResponse> {
+        return userRepository.findAllByRole(Role.ROLE_MANAGER).map {
+            ArtistUserOverviewResponse(
+                userId = it.id!!,
+                nickName = it.nickName!!,
+                profileImageUrl = it.profileImageUrl
+            )
+        }
 
+    }
 }
