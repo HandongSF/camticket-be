@@ -35,25 +35,41 @@ class S3Uploader(
 
     // 단일 삭제
     fun delete(imageUrl: String) {
-        val key = extractKeyFromUrl(imageUrl)
-        val deleteRequest = DeleteObjectRequest.builder()
-            .bucket(bucket)
-            .key(key)
-            .build()
+        try {
+            val key = extractKeyFromUrl(imageUrl)
+            val deleteRequest = DeleteObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .build()
 
-        s3Client.deleteObject(deleteRequest)
+            s3Client.deleteObject(deleteRequest)
+            println("🗑️ S3에서 삭제 완료: $key")
+        } catch (e: Exception) {
+            println("⚠️ S3 삭제 실패 (무시됨): $imageUrl, 이유: ${e.message}")
+        }
     }
 
-    // 다중 삭제
+
     fun deleteAll(imageUrls: List<String>) {
-        imageUrls.forEach { delete(it) }
+        imageUrls.forEach { url ->
+            try {
+                delete(url) // 내부에서도 try-catch 있지만, 중첩해도 문제없음
+            } catch (e: Exception) {
+                println("⚠️ 다중 삭제 중 실패 (무시됨): $url, 이유: ${e.message}")
+            }
+        }
     }
+
 
     // URL → S3 Key 추출
     private fun extractKeyFromUrl(url: String): String {
         val baseUrl = "https://$bucket.s3.$region.amazonaws.com/"
+        if (!url.startsWith(baseUrl)) {
+            throw IllegalArgumentException("URL does not match S3 base format: $url")
+        }
         return url.removePrefix(baseUrl)
     }
+
 
 }
 
