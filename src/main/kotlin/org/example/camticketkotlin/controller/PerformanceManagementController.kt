@@ -57,7 +57,7 @@ class PerformanceManagementController(
 
     @Operation(
         summary = "공연 게시글 오버뷰 조회",
-        description = "공연 관리 페이지에서 아티스트 ID로 공연들을 조회하고, 각 게시물에 대해 프로필 이미지, 식별 ID, 마지막 회차 정보를 제공합니다."
+        description = "공연 관리 페이지에서 관리자가 작성한 공연들을 조회하고, 각 게시물에 대해 프로필 이미지, 식별 ID, 마지막 회차 정보를 제공합니다."
     )
     @ApiResponses(
         value = [
