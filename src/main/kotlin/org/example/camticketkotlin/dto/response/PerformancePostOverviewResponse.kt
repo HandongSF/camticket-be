@@ -9,5 +9,6 @@ data class PerformancePostOverviewResponse(
     val reservationStartAt: LocalDateTime,
     val reservationEndAt: LocalDateTime,
     val firstScheduleStartTime: LocalDateTime,
-    val location: String
+    val location: String,
+    val userId: Long
 )
