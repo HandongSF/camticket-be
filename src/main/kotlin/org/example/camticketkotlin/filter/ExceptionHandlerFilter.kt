@@ -17,9 +17,9 @@ import java.nio.charset.StandardCharsets
 class ExceptionHandlerFilter : OncePerRequestFilter() {
 
     override fun doFilterInternal(
-            request: HttpServletRequest,
-            response: HttpServletResponse,
-            filterChain: FilterChain
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain
     ) {
         try {
             filterChain.doFilter(request, response)
@@ -27,6 +27,10 @@ class ExceptionHandlerFilter : OncePerRequestFilter() {
             setErrorResponse(response, e.message ?: "로그인하지 않은 사용자입니다.", HttpStatus.UNAUTHORIZED)
         } catch (e: WrongTokenException) {
             setErrorResponse(response, e.message ?: "잘못된 토큰입니다.", HttpStatus.UNAUTHORIZED)
+        } catch (e: IllegalArgumentException) {
+            setErrorResponse(response, e.message ?: "요청이 잘못되었습니다.", HttpStatus.BAD_REQUEST)
+        } catch (e: Exception) {
+            setErrorResponse(response, "서버 내부 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR)
         }
     }
 
@@ -37,8 +41,8 @@ class ExceptionHandlerFilter : OncePerRequestFilter() {
         response.characterEncoding = StandardCharsets.UTF_8.name()
 
         val exceptionResponse = ExceptionResponse(
-                error = httpStatus.reasonPhrase,
-                message = message
+            error = httpStatus.reasonPhrase,
+            message = message
         )
 
         try {
@@ -48,3 +52,4 @@ class ExceptionHandlerFilter : OncePerRequestFilter() {
         }
     }
 }
+
