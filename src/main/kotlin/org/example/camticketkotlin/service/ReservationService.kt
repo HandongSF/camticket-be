@@ -1,6 +1,7 @@
 package org.example.camticketkotlin.service
 
 import org.example.camticketkotlin.domain.*
+import org.example.camticketkotlin.dto.request.RefundCreateRequest
 import org.example.camticketkotlin.dto.request.ReservationCreateRequest
 import org.example.camticketkotlin.dto.response.*
 import org.example.camticketkotlin.exception.NotFoundException
@@ -224,7 +225,7 @@ class ReservationService(
                 reservationId = reservation.id!!,
                 performanceTitle = reservation.performanceSchedule.performancePost.title,
                 performanceDate = reservation.performanceSchedule.startTime,
-                userName = reservation.user.name ?: "Unknown",
+                userNickName = reservation.user.nickName ?: "Unknown",
                 userEmail = reservation.user.email ?: "Unknown",
                 ticketOptionName = reservation.ticketOption.name,
                 ticketPrice = reservation.ticketOption.price,
@@ -309,7 +310,7 @@ class ReservationService(
                 reservationId = reservation.id!!,
                 performanceTitle = reservation.performanceSchedule.performancePost.title,
                 performanceDate = reservation.performanceSchedule.startTime,
-                userName = reservation.user.name ?: "Unknown",
+                userNickName = reservation.user.nickName ?: "Unknown",
                 userEmail = reservation.user.email ?: "Unknown",
                 ticketOptionName = reservation.ticketOption.name,
                 ticketPrice = reservation.ticketOption.price,
@@ -478,6 +479,139 @@ class ReservationService(
                         .find { it.seatCode == seatCode }!!
                 )
             )
+        }
+    }
+
+
+    // 환불 신청 (사유 없이 간단하게)
+    @Transactional
+    fun requestRefund(user: User, reservationId: Long): RefundResponse {
+        // 예매 신청 조회
+        val reservation = reservationRequestRepository.findById(reservationId)
+            .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+        // 권한 확인: 예매한 본인만 환불 신청 가능
+        if (reservation.user.id != user.id) {
+            throw IllegalArgumentException("환불 신청 권한이 없습니다.")
+        }
+
+        // 환불 신청 가능한 상태 확인 (APPROVED만 환불 신청 가능)
+        if (reservation.status != ReservationStatus.APPROVED) {
+            throw IllegalArgumentException("승인된 예매만 환불 신청할 수 있습니다. 현재 상태: ${reservation.status}")
+        }
+
+        // 공연 날짜 확인 (공연 후에는 환불 불가 - 옵션)
+        if (reservation.performanceSchedule.startTime.isBefore(LocalDateTime.now())) {
+            throw IllegalArgumentException("공연이 이미 시작되어 환불 신청할 수 없습니다.")
+        }
+
+        // 상태를 REFUND_REQ로 변경
+        reservation.status = ReservationStatus.REFUND_REQUESTED
+        reservationRequestRepository.save(reservation)
+
+        return RefundResponse(
+            reservationId = reservation.id!!,
+            performanceTitle = reservation.performanceSchedule.performancePost.title,
+            performanceDate = reservation.performanceSchedule.startTime,
+            ticketOptionName = reservation.ticketOption.name,
+            totalPrice = reservation.ticketOption.price * reservation.count,
+            status = reservation.status,
+            requestDate = LocalDateTime.now()
+        )
+    }
+
+    // 환불 승인/거절 (관리자용)
+    @Transactional
+    fun processRefund(user: User, reservationId: Long, approve: Boolean): Unit {
+        // 예매 신청 조회
+        val reservation = reservationRequestRepository.findById(reservationId)
+            .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+        // 권한 확인: 해당 공연을 등록한 사람만 환불 처리 가능
+        val performanceOwner = reservation.performanceSchedule.performancePost.user
+        if (performanceOwner.id != user.id) {
+            throw IllegalArgumentException("환불 처리 권한이 없습니다.")
+        }
+
+        // 환불 신청 상태인지 확인
+        if (reservation.status != ReservationStatus.REFUND_REQUESTED) {
+            throw IllegalArgumentException("환불 신청 상태가 아닙니다. 현재 상태: ${reservation.status}")
+        }
+
+        if (approve) {
+            // 환불 승인: 상태 변경 + 좌석 해제
+            reservation.status = ReservationStatus.REFUNDED
+            reservationRequestRepository.save(reservation)
+
+            // 좌석을 다시 AVAILABLE로 변경 (예매 가능하도록)
+            releaseSeatsForRefund(reservation)
+        } else {
+            // 환불 거절: 다시 APPROVED 상태로 복원
+            reservation.status = ReservationStatus.APPROVED
+            reservationRequestRepository.save(reservation)
+        }
+    }
+
+    // 환불 신청 목록 조회 (관리자용)
+    @Transactional(readOnly = true)
+    fun getRefundRequests(user: User): List<ReservationManagementResponse> {
+        // 내가 등록한 공연들 조회
+        val myPosts = performancePostRepository.findAllByUserId(user.id!!)
+
+        if (myPosts.isEmpty()) {
+            return emptyList()
+        }
+
+        // 내 공연들의 모든 회차 조회
+        val mySchedules = myPosts.flatMap { post ->
+            performanceScheduleRepository.findByPerformancePost(post)
+        }
+
+        // 환불 신청 상태인 예매들만 조회
+        val refundRequests = mySchedules.flatMap { schedule ->
+            reservationRequestRepository.findByPerformanceScheduleIdAndStatusOrderByRegDateDesc(
+                schedule.id!!,
+                ReservationStatus.REFUND_REQUESTED
+            )
+        }
+
+        return refundRequests.map { reservation ->
+            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+
+            ReservationManagementResponse(
+                reservationId = reservation.id!!,
+                performanceTitle = reservation.performanceSchedule.performancePost.title,
+                performanceDate = reservation.performanceSchedule.startTime,
+                userNickName = reservation.user.nickName ?: "Unknown",
+                userEmail = reservation.user.email ?: "Unknown",
+                ticketOptionName = reservation.ticketOption.name,
+                ticketPrice = reservation.ticketOption.price,
+                count = reservation.count,
+                totalPrice = reservation.ticketOption.price * reservation.count,
+                status = reservation.status,
+                selectedSeats = seatCodes,
+                regDate = reservation.regDate!!
+            )
+        }
+    }
+
+    // 헬퍼 메서드: 환불용 좌석 해제 (순서 중요!)
+    private fun releaseSeatsForRefund(reservation: ReservationRequest) {
+        val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+
+        // 1단계: ReservationSeat 연결 먼저 삭제
+        reservationSeats.forEach { reservationSeat ->
+            reservationSeatRepository.delete(reservationSeat)
+        }
+
+        // 2단계: 그 다음 ScheduleSeat 처리
+        reservationSeats.forEach { reservationSeat ->
+            val scheduleSeat = reservationSeat.scheduleSeat
+            // RESERVED 상태 좌석을 DB에서 삭제 (AVAILABLE로 복원)
+            if (scheduleSeat.status == SeatStatus.RESERVED) {
+                scheduleSeatRepository.delete(scheduleSeat)
+            }
         }
     }
 }

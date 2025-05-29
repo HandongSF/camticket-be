@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.example.camticketkotlin.common.ApiResponse as ApiWrapper
 import org.example.camticketkotlin.domain.User
+import org.example.camticketkotlin.dto.request.RefundCreateRequest
 import org.example.camticketkotlin.dto.request.ReservationCreateRequest
 import org.example.camticketkotlin.dto.response.*
 import org.example.camticketkotlin.service.ReservationService
@@ -207,5 +208,67 @@ class ReservationController(
     ): ResponseEntity<ApiWrapper<Unit>> {
         reservationService.updateReservationStatus(user, reservationId, status)
         return ResponseEntity.ok(ApiWrapper.success("예매 상태가 변경되었습니다."))
+    }
+    @Operation(
+        summary = "환불 신청",
+        description = "승인된 예매에 대해 환불을 신청합니다. (APPROVED 상태인 경우에만 가능)"
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "201", description = "환불 신청 성공"),
+        ApiResponse(responseCode = "400", description = "환불 신청할 수 없는 예매 상태"),
+        ApiResponse(responseCode = "403", description = "환불 신청 권한 없음"),
+        ApiResponse(responseCode = "404", description = "해당 예매가 존재하지 않음")
+    ])
+    @PostMapping("/{reservationId}/refund")
+    fun requestRefund(
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
+        reservationId: Long,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<RefundResponse>> {
+        val refund = reservationService.requestRefund(user, reservationId)
+        return ResponseEntity
+            .status(201)
+            .body(ApiWrapper.created("환불 신청이 접수되었습니다.", refund))
+    }
+
+    @Operation(
+        summary = "환불 승인/거절 (관리자용)",
+        description = "환불 신청을 승인하거나 거절합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "환불 처리 성공"),
+        ApiResponse(responseCode = "400", description = "환불 처리할 수 없는 상태"),
+        ApiResponse(responseCode = "403", description = "환불 처리 권한 없음"),
+        ApiResponse(responseCode = "404", description = "해당 예매가 존재하지 않음")
+    ])
+    @PatchMapping("/{reservationId}/refund")
+    fun processRefund(
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
+        reservationId: Long,
+        @RequestParam
+        @Parameter(description = "승인 여부 (true: 승인, false: 거절)")
+        approve: Boolean,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<Unit>> {
+        reservationService.processRefund(user, reservationId, approve)
+        val message = if (approve) "환불이 승인되었습니다." else "환불이 거절되었습니다."
+        return ResponseEntity.ok(ApiWrapper.success(message))
+    }
+
+    @Operation(
+        summary = "환불 신청 목록 조회 (관리자용)",
+        description = "내 공연에 대한 모든 환불 신청 목록을 조회합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "환불 신청 목록 조회 성공")
+    ])
+    @GetMapping("/management/refunds")
+    fun getRefundRequests(
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<List<ReservationManagementResponse>>> {
+        val refunds = reservationService.getRefundRequests(user)
+        return ResponseEntity.ok(ApiWrapper.success(refunds, "환불 신청 목록을 조회했습니다."))
     }
 }

@@ -36,4 +36,9 @@ interface ReservationRequestRepository : JpaRepository<ReservationRequest, Long>
         AND r.status IN ('PENDING', 'APPROVED')
     """)
     fun getReservedSeatCount(scheduleId: Long): Int
+
+    fun findByPerformanceScheduleIdAndStatusOrderByRegDateDesc(
+        scheduleId: Long,
+        status: ReservationStatus
+    ): List<ReservationRequest>
 }
