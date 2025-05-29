@@ -151,11 +151,47 @@ class ReservationController(
     }
 
     @Operation(
+        summary = "내 공연의 예매 신청 목록 조회 (관리자용)",
+        description = "로그인한 사용자가 등록한 모든 공연에 대한 예매 신청 목록을 조회합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "예매 신청 목록 조회 성공")
+    ])
+    @GetMapping("/management/my-performances")
+    fun getMyPerformanceReservations(
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<List<ReservationManagementResponse>>> {
+        val reservations = reservationService.getReservationRequestsForMyPerformances(user)
+        return ResponseEntity.ok(ApiWrapper.success(reservations, "내 공연의 예매 신청 목록을 조회했습니다."))
+    }
+
+    @Operation(
+        summary = "특정 공연의 예매 신청 목록 조회 (관리자용)",
+        description = "특정 공연에 대한 모든 예매 신청 목록을 조회합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "예매 신청 목록 조회 성공"),
+        ApiResponse(responseCode = "403", description = "해당 공연의 조회 권한 없음"),
+        ApiResponse(responseCode = "404", description = "해당 공연이 존재하지 않음")
+    ])
+    @GetMapping("/management/performance/{postId}")
+    fun getPerformanceReservations(
+        @PathVariable
+        @Parameter(description = "공연 게시글 ID")
+        postId: Long,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<List<ReservationManagementResponse>>> {
+        val reservations = reservationService.getReservationRequestsForPerformance(user, postId)
+        return ResponseEntity.ok(ApiWrapper.success(reservations, "공연의 예매 신청 목록을 조회했습니다."))
+    }
+
+    @Operation(
         summary = "예매 상태 변경 (관리자용)",
         description = "예매 신청의 상태를 변경합니다. (PENDING → APPROVED/REJECTED)"
     )
     @ApiResponses(value = [
         ApiResponse(responseCode = "200", description = "예매 상태 변경 성공"),
+        ApiResponse(responseCode = "400", description = "잘못된 상태 또는 변경 불가능한 예매"),
         ApiResponse(responseCode = "403", description = "권한 없음"),
         ApiResponse(responseCode = "404", description = "해당 예매가 존재하지 않음")
     ])
@@ -169,7 +205,7 @@ class ReservationController(
         status: String,
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<Unit>> {
-        // TODO: 예매 상태 변경 로직 구현 (관리자 권한 체크 필요)
+        reservationService.updateReservationStatus(user, reservationId, status)
         return ResponseEntity.ok(ApiWrapper.success("예매 상태가 변경되었습니다."))
     }
 }

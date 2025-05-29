@@ -1,4 +1,3 @@
-
 // 1. ReservationRequestRepository.kt
 package org.example.camticketkotlin.repository
 
@@ -16,8 +15,8 @@ interface ReservationRequestRepository : JpaRepository<ReservationRequest, Long>
     // 특정 상태의 예매 신청 조회
     fun findByStatus(status: ReservationStatus): List<ReservationRequest>
 
-    // 특정 공연 회차의 예매 신청 조회
-    fun findByPerformanceScheduleId(scheduleId: Long): List<ReservationRequest>
+    // 특정 공연 회차의 예매 신청 조회 (최신순)
+    fun findByPerformanceScheduleIdOrderByRegDateDesc(scheduleId: Long): List<ReservationRequest>
 
     // 사용자가 특정 공연에 예매한 수량 합계 조회
     @Query("""
