@@ -25,5 +25,9 @@ class ReservationRequest(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    var status: ReservationStatus  // PENDING / APPROVED / REJECTED
+    var status: ReservationStatus,  // PENDING / APPROVED / REJECTED
+
+    @Column(nullable = false)
+    var isPaymentCompleted: Boolean = false  // ← 추가: 사용자가 입금했다고 체크했는지
+
 ) : BaseEntity()
