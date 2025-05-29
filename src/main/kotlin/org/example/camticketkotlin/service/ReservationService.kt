@@ -1,5 +1,6 @@
 package org.example.camticketkotlin.service
 
+import AdminReservationDetailResponse
 import org.example.camticketkotlin.domain.*
 import org.example.camticketkotlin.dto.request.RefundCreateRequest
 import org.example.camticketkotlin.dto.request.ReservationCreateRequest
@@ -140,23 +141,43 @@ class ReservationService(
             throw IllegalArgumentException("선택한 회차가 해당 공연에 속하지 않습니다.")
         }
 
-        // 3. 공연 제목 확인 (클라이언트와 서버 데이터 일치 확인)
-        if (post.title != request.performanceTitle) {
-            throw IllegalArgumentException("공연 정보가 일치하지 않습니다. 페이지를 새로고침해주세요.")
+        // 4. 티켓 주문 검증
+        if (request.ticketOrders.isEmpty()) {
+            throw IllegalArgumentException("티켓 주문 정보가 없습니다.")
         }
 
-        // 4. 티켓 옵션이 해당 공연에 속하는지 확인
-        val ticketOption = ticketOptionRepository.findById(request.ticketOptionId)
-            .orElseThrow { NotFoundException("해당 티켓 옵션이 존재하지 않습니다.") }
+        val savedReservations = mutableListOf<ReservationRequest>()
+        var totalTicketCount = 0
+        var totalPrice = 0
 
-        if (ticketOption.performancePost.id != request.performancePostId) {
-            throw IllegalArgumentException("선택한 티켓 옵션이 해당 공연에 속하지 않습니다.")
-        }
+        // 5. 각 티켓 옵션별로 처리
+        request.ticketOrders.forEach { ticketOrder ->
+            // 티켓 옵션 검증
+            val ticketOption = ticketOptionRepository.findById(ticketOrder.ticketOptionId)
+                .orElseThrow { NotFoundException("해당 티켓 옵션이 존재하지 않습니다.") }
 
-        // 5. 가격 검증
-        val expectedPrice = ticketOption.price * request.count
-        if (expectedPrice != request.expectedTotalPrice) {
-            throw IllegalArgumentException("가격 정보가 일치하지 않습니다. 현재 가격: $expectedPrice 원")
+            if (ticketOption.performancePost.id != request.performancePostId) {
+                throw IllegalArgumentException("선택한 티켓 옵션이 해당 공연에 속하지 않습니다.")
+            }
+
+            // 가격 검증
+            if (ticketOption.price != ticketOrder.unitPrice) {
+                throw IllegalArgumentException("가격 정보가 일치하지 않습니다. ${ticketOption.name}: 현재 가격 ${ticketOption.price}원")
+            }
+
+            totalTicketCount += ticketOrder.count
+            totalPrice += ticketOption.price * ticketOrder.count
+
+            // 예매 신청 생성
+            val reservation = ReservationRequest(
+                performanceSchedule = schedule,
+                ticketOption = ticketOption,
+                user = user,
+                count = ticketOrder.count,
+                status = ReservationStatus.PENDING
+            )
+
+            savedReservations.add(reservationRequestRepository.save(reservation))
         }
 
         // 6. 예매 가능 여부 검사
@@ -166,42 +187,38 @@ class ReservationService(
             throw IllegalArgumentException(availability.message)
         }
 
-        if (request.count > availability.remainingUserQuota) {
+        if (totalTicketCount > availability.remainingUserQuota) {
             throw IllegalArgumentException("예매 가능 수량을 초과했습니다.")
         }
 
         // 7. 좌석 선택 검증 (지정석인 경우)
         if (request.selectedSeatCodes.isNotEmpty()) {
-            validateSeatSelection(request.selectedSeatCodes, schedule, request.count)
+            if (request.selectedSeatCodes.size != totalTicketCount) {
+                throw IllegalArgumentException("선택한 좌석 수와 티켓 수량이 일치하지 않습니다.")
+            }
+            validateSeatSelection(request.selectedSeatCodes, schedule, totalTicketCount)
         }
 
-        // 8. 예매 신청 생성
-        val reservation = ReservationRequest(
-            performanceSchedule = schedule,
-            ticketOption = ticketOption,
-            user = user,
-            count = request.count,
-            status = ReservationStatus.PENDING
-        )
-
-        val savedReservation = reservationRequestRepository.save(reservation)
-
-        // 9. 좌석 예매 정보 저장 (지정석인 경우)
-        if (request.selectedSeatCodes.isNotEmpty()) {
-            saveReservationSeats(savedReservation, request.selectedSeatCodes, schedule)
+        // 8. 좌석 예매 정보 저장 (지정석인 경우) - 첫 번째 예매에만 연결
+        if (request.selectedSeatCodes.isNotEmpty() && savedReservations.isNotEmpty()) {
+            saveReservationSeats(savedReservations.first(), request.selectedSeatCodes, schedule)
         }
+
+        // 9. 응답 생성 (첫 번째 예매 기준으로 반환)
+        val mainReservation = savedReservations.first()
+        val allTicketOptions = savedReservations.map { "${it.ticketOption.name}(${it.count}매)" }.joinToString(", ")
 
         return ReservationResponse(
-            reservationId = savedReservation.id!!,
+            reservationId = mainReservation.id!!,
             performanceTitle = schedule.performancePost.title,
             performanceDate = schedule.startTime,
-            ticketOptionName = ticketOption.name,
-            ticketPrice = ticketOption.price,
-            count = request.count,
-            totalPrice = ticketOption.price * request.count,
-            status = savedReservation.status,
+            ticketOptionName = allTicketOptions,
+            ticketPrice = totalPrice / totalTicketCount, // 평균 단가
+            count = totalTicketCount,
+            totalPrice = totalPrice,
+            status = mainReservation.status,
             selectedSeats = request.selectedSeatCodes,
-            regDate = savedReservation.regDate!!
+            regDate = mainReservation.regDate!!
         )
     }
 
@@ -622,168 +639,161 @@ class ReservationService(
             }
         }
     }
-        @Transactional(readOnly = true)
-        fun getReservationDetail(user: User, reservationId: Long): ReservationDetailResponse {
-            val reservation = reservationRequestRepository.findById(reservationId)
-                .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
 
-            // 권한 확인: 본인 예매만 조회 가능
-            if (reservation.user.id != user.id) {
-                throw IllegalArgumentException("예매 상세 정보 조회 권한이 없습니다.")
-            }
 
-            val schedule = reservation.performanceSchedule
-            val post = schedule.performancePost
-            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
-            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+    @Transactional(readOnly = true)
+    fun getReservationDetail(user: User, reservationId: Long): ReservationDetailResponse {
+        val mainReservation = reservationRequestRepository.findById(reservationId)
+            .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
 
-            // 상태별 액션 타입 결정
-            val (actionType, actionDescription, statusDescription) = determineUserAction(reservation)
+        // 권한 확인
+        if (mainReservation.user.id != user.id) {
+            throw IllegalArgumentException("예매 상세 정보 조회 권한이 없습니다.")
+        }
 
-            return ReservationDetailResponse(
-                reservationId = reservation.id!!,
-                status = reservation.status,
-                statusDescription = statusDescription,
-                actionType = actionType,
-                actionDescription = actionDescription,
+        val schedule = mainReservation.performanceSchedule
+        val post = schedule.performancePost
 
-                performanceInfo = ReservationDetailResponse.PerformanceInfo(
-                    title = post.title,
-                    category = post.category,
-                    location = post.location,
-                    performanceDate = schedule.startTime,
-                    profileImageUrl = post.profileImageUrl
-                ),
+        // 같은 사용자, 같은 회차의 모든 예매 조회
+        val allReservations = reservationRequestRepository
+            .findByUserAndPerformanceScheduleOrderByRegDateDesc(user, schedule)
 
-                reservationInfo = ReservationDetailResponse.ReservationInfo(
-                    userNickName = reservation.user.nickName ?: "Unknown",
-                    userEmail = reservation.user.email ?: "Unknown",
-                    ticketCount = reservation.count
-                ),
+        val allSeatCodes = allReservations.flatMap { reservation ->
+            reservationSeatRepository.findByReservationRequest(reservation)
+                .map { it.scheduleSeat.seatCode }
+        }
 
-                seatInfo = ReservationDetailResponse.SeatInfo(
-                    ticketType = post.ticketType,
-                    selectedSeats = seatCodes,
-                    seatDescription = createSeatDescription(post.ticketType, seatCodes, reservation.count)
-                ),
+        // 회차 정보 계산
+        val allSchedules = performanceScheduleRepository.findByPerformancePost(post)
+            .sortedBy { it.startTime }
+        val scheduleIndex = allSchedules.indexOfFirst { it.id == schedule.id } + 1
 
-                paymentInfo = ReservationDetailResponse.PaymentInfo(
-                    ticketOptionName = reservation.ticketOption.name,
-                    unitPrice = reservation.ticketOption.price,
-                    quantity = reservation.count,
-                    totalPrice = reservation.ticketOption.price * reservation.count,
-                    priceDescription = "${reservation.ticketOption.name} ${String.format("%,d", reservation.ticketOption.price)}원 × ${reservation.count}매 = ${String.format("%,d", reservation.ticketOption.price * reservation.count)}원"
-                ),
+        // 총 수량과 가격 계산
+        val totalCount = allReservations.sumOf { it.count }
+        val totalPrice = allReservations.sumOf { it.ticketOption.price * it.count }
 
-                reservationDate = reservation.regDate!!
+        // PaymentInfo를 배열로 변경
+        val paymentInfoList = allReservations.map { reservation ->
+            ReservationDetailResponse.PaymentInfoItem(
+                ticketOptionName = reservation.ticketOption.name,
+                unitPrice = reservation.ticketOption.price,
+                quantity = reservation.count,
+                subtotal = reservation.ticketOption.price * reservation.count
             )
         }
 
-        // 관리자용 예매 상세 조회
-        @Transactional(readOnly = true)
-        fun getAdminReservationDetail(user: User, reservationId: Long): AdminReservationDetailResponse {
-            val reservation = reservationRequestRepository.findById(reservationId)
-                .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+        return ReservationDetailResponse(
+            reservationId = mainReservation.id!!,
+            status = mainReservation.status,
 
-            // 권한 확인: 해당 공연을 등록한 사람만 조회 가능
-            val performanceOwner = reservation.performanceSchedule.performancePost.user
-            if (performanceOwner.id != user.id) {
-                throw IllegalArgumentException("예매 관리 권한이 없습니다.")
-            }
+            performanceInfo = ReservationDetailResponse.PerformanceInfo(
+                title = post.title,
+                category = post.category,
+                location = post.location,
+                performanceDate = schedule.startTime,
+                scheduleId = schedule.id!!,
+                scheduleIndex = scheduleIndex,
+                profileImageUrl = post.profileImageUrl
+            ),
 
-            val schedule = reservation.performanceSchedule
-            val post = schedule.performancePost
-            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
-            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+            reservationInfo = ReservationDetailResponse.ReservationInfo(
+                userNickName = mainReservation.user.nickName ?: "Unknown",
+                userBankAccount = mainReservation.user.bankAccount ?: "등록된 계좌 없음",
+                ticketCount = totalCount,  // 총 수량
+                totalPrice = totalPrice,   // 총 가격
+                isPaymentCompleted = false
+            ),
 
-            // 관리 가능한 액션 결정
-            val (canApprove, canReject, canRefund, statusDescription, notes) = determineAdminActions(reservation)
+            seatInfo = ReservationDetailResponse.SeatInfo(
+                ticketType = post.ticketType,
+                selectedSeats = allSeatCodes
+            ),
 
-            return AdminReservationDetailResponse(
-                reservationId = reservation.id!!,
-                status = reservation.status,
-                statusDescription = statusDescription,
+            paymentInfo = paymentInfoList,  // 배열로 변경
 
-                performanceInfo = AdminReservationDetailResponse.AdminPerformanceInfo(
-                    performanceId = post.id!!,
-                    title = post.title,
-                    category = post.category,
-                    location = post.location,
-                    performanceDate = schedule.startTime,
-                    scheduleId = schedule.id!!,
-                    profileImageUrl = post.profileImageUrl
-                ),
-
-                customerInfo = AdminReservationDetailResponse.CustomerInfo(
-                    userId = reservation.user.id!!,
-                    userName = reservation.user.name ?: "Unknown",
-                    userEmail = reservation.user.email ?: "Unknown",
-                    userNickname = reservation.user.nickName
-                ),
-
-                seatInfo = ReservationDetailResponse.SeatInfo(
-                    ticketType = post.ticketType,
-                    selectedSeats = seatCodes,
-                    seatDescription = createSeatDescription(post.ticketType, seatCodes, reservation.count)
-                ),
-
-                paymentInfo = ReservationDetailResponse.PaymentInfo(
-                    ticketOptionName = reservation.ticketOption.name,
-                    unitPrice = reservation.ticketOption.price,
-                    quantity = reservation.count,
-                    totalPrice = reservation.ticketOption.price * reservation.count,
-                    priceDescription = "${reservation.ticketOption.name} ${String.format("%,d", reservation.ticketOption.price)}원 × ${reservation.count}매 = ${String.format("%,d", reservation.ticketOption.price * reservation.count)}원"
-                ),
-
-                managementInfo = AdminReservationDetailResponse.ManagementInfo(
-                    reservationDate = reservation.regDate!!,
-                    lastModifiedDate = reservation.modDate!!,
-                    canApprove = canApprove,
-                    canReject = canReject,
-                    canRefund = canRefund,
-                    notes = notes
-                )
-            )
-        }
-
-        // 헬퍼 메서드: 사용자 액션 타입 결정
-        private fun determineUserAction(reservation: ReservationRequest): Triple<String, String, String> {
-            return when (reservation.status) {
-                ReservationStatus.PENDING -> Triple("CANCEL", "예매 취소", "예매 신청 중 (취소 가능)")
-                ReservationStatus.APPROVED -> {
-                    val now = LocalDateTime.now()
-                    if (reservation.performanceSchedule.startTime.isBefore(now)) {
-                        Triple("NONE", "처리 완료", "공연 완료")
-                    } else {
-                        Triple("REFUND", "환불 신청", "예매 완료 (환불 신청 가능)")
-                    }
-                }
-                ReservationStatus.REJECTED -> Triple("NONE", "처리 완료", "예매 거절됨")
-                ReservationStatus.REFUND_REQUESTED -> Triple("NONE", "환불 신청 중", "환불 신청 중 (승인 대기)")
-                ReservationStatus.REFUNDED -> Triple("NONE", "처리 완료", "환불 완료")
-            }
-        }
-
-        // 헬퍼 메서드: 관리자 액션 결정
-        private fun determineAdminActions(reservation: ReservationRequest): Tuple5<Boolean, Boolean, Boolean, String, String> {
-            return when (reservation.status) {
-                ReservationStatus.PENDING -> Tuple5(true, true, false, "예매 승인 대기 중", "예매 승인 또는 거절이 필요합니다.")
-                ReservationStatus.APPROVED -> Tuple5(false, false, false, "예매 승인 완료", "예매가 정상적으로 승인되었습니다.")
-                ReservationStatus.REJECTED -> Tuple5(false, false, false, "예매 거절됨", "예매가 거절되었습니다.")
-                ReservationStatus.REFUND_REQUESTED -> Tuple5(false, false, true, "환불 신청 접수", "환불 승인 또는 거절이 필요합니다.")
-                ReservationStatus.REFUNDED -> Tuple5(false, false, false, "환불 처리 완료", "환불이 완료되었습니다.")
-            }
-        }
-
-        // 헬퍼 메서드: 좌석 설명 생성
-        private fun createSeatDescription(ticketType: TicketType, seatCodes: List<String>, count: Int): String {
-            return if (ticketType == TicketType.PAID && seatCodes.isNotEmpty()) {
-                "지정석: ${seatCodes.joinToString(", ")}"
-            } else {
-                "자유석 ${count}매"
-            }
-        }
+            reservationDate = mainReservation.regDate!!
+        )
     }
+
+    // 관리자용 예매 상세 조회
+    @Transactional(readOnly = true)
+    fun getAdminReservationDetail(user: User, reservationId: Long): AdminReservationDetailResponse {
+        val mainReservation = reservationRequestRepository.findById(reservationId)
+            .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+        // 권한 확인: 해당 공연을 등록한 사람만 조회 가능
+        val performanceOwner = mainReservation.performanceSchedule.performancePost.user
+        if (performanceOwner.id != user.id) {
+            throw IllegalArgumentException("예매 관리 권한이 없습니다.")
+        }
+
+        val schedule = mainReservation.performanceSchedule
+        val post = schedule.performancePost
+
+        // 같은 사용자, 같은 회차의 모든 예매 조회
+        val allReservations = reservationRequestRepository
+            .findByUserAndPerformanceScheduleOrderByRegDateDesc(mainReservation.user, schedule)
+
+        val allSeatCodes = allReservations.flatMap { reservation ->
+            reservationSeatRepository.findByReservationRequest(reservation)
+                .map { it.scheduleSeat.seatCode }
+        }
+
+        // 회차 정보 계산
+        val allSchedules = performanceScheduleRepository.findByPerformancePost(post)
+            .sortedBy { it.startTime }
+        val scheduleIndex = allSchedules.indexOfFirst { it.id == schedule.id } + 1
+
+        // PaymentInfo를 배열로 변경
+        val paymentInfoList = allReservations.map { reservation ->
+            ReservationDetailResponse.PaymentInfoItem(
+                ticketOptionName = reservation.ticketOption.name,
+                unitPrice = reservation.ticketOption.price,
+                quantity = reservation.count,
+                subtotal = reservation.ticketOption.price * reservation.count
+            )
+        }
+
+        return AdminReservationDetailResponse(
+            reservationId = mainReservation.id!!,
+            status = mainReservation.status,
+            statusDescription = when(mainReservation.status) {
+                ReservationStatus.PENDING -> "예매 승인 대기 중"
+                ReservationStatus.APPROVED -> "예매 승인 완료"
+                ReservationStatus.REJECTED -> "예매 거절됨"
+                ReservationStatus.REFUND_REQUESTED -> "환불 신청 접수"
+                ReservationStatus.REFUNDED -> "환불 처리 완료"
+            },
+
+            performanceInfo = AdminReservationDetailResponse.AdminPerformanceInfo(
+                performanceId = post.id!!,
+                title = post.title,
+                category = post.category,
+                location = post.location,
+                performanceDate = schedule.startTime,
+                scheduleId = schedule.id!!,
+                scheduleIndex = scheduleIndex,
+                profileImageUrl = post.profileImageUrl
+            ),
+
+            customerInfo = AdminReservationDetailResponse.CustomerInfo(
+                userId = mainReservation.user.id!!,
+                userName = mainReservation.user.name ?: "Unknown",
+                userEmail = mainReservation.user.email ?: "Unknown",
+                userNickname = mainReservation.user.nickName,
+                userBankAccount = mainReservation.user.bankAccount ?: "등록된 계좌 없음"
+            ),
+
+            seatInfo = ReservationDetailResponse.SeatInfo(
+                ticketType = post.ticketType,
+                selectedSeats = allSeatCodes
+            ),
+
+            paymentInfo = paymentInfoList
+        )
+    }
+
+}
 
 
 
