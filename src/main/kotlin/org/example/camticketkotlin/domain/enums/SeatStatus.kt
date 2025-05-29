@@ -3,5 +3,6 @@ package org.example.camticketkotlin.domain
 enum class SeatStatus {
     AVAILABLE,
     UNAVAILABLE,
-    RESERVED
+    RESERVED,
+    PENDING  // ← 추가
 }
