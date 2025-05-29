@@ -29,8 +29,8 @@ class ReservationController(
     ])
     @GetMapping("/schedules/{postId}")
     fun getPerformanceSchedules(
-        @PathVariable 
-        @Parameter(description = "공연 게시글 ID") 
+        @PathVariable
+        @Parameter(description = "공연 게시글 ID")
         postId: Long
     ): ResponseEntity<ApiWrapper<List<PerformanceScheduleResponse>>> {
         val schedules = reservationService.getPerformanceSchedules(postId)
@@ -47,8 +47,8 @@ class ReservationController(
     ])
     @GetMapping("/seats/{scheduleId}")
     fun getSeatInfo(
-        @PathVariable 
-        @Parameter(description = "공연 회차 ID") 
+        @PathVariable
+        @Parameter(description = "공연 회차 ID")
         scheduleId: Long
     ): ResponseEntity<ApiWrapper<List<SeatInfoResponse>>> {
         val seats = reservationService.getSeatInfo(scheduleId)
@@ -65,8 +65,8 @@ class ReservationController(
     ])
     @GetMapping("/ticket-options/{postId}")
     fun getTicketOptions(
-        @PathVariable 
-        @Parameter(description = "공연 게시글 ID") 
+        @PathVariable
+        @Parameter(description = "공연 게시글 ID")
         postId: Long
     ): ResponseEntity<ApiWrapper<List<TicketOptionResponse>>> {
         val options = reservationService.getTicketOptions(postId)
@@ -83,8 +83,8 @@ class ReservationController(
     ])
     @GetMapping("/availability/{postId}")
     fun checkReservationAvailability(
-        @PathVariable 
-        @Parameter(description = "공연 게시글 ID") 
+        @PathVariable
+        @Parameter(description = "공연 게시글 ID")
         postId: Long,
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<ReservationAvailabilityResponse>> {
@@ -103,8 +103,8 @@ class ReservationController(
     ])
     @PostMapping
     fun createReservation(
-        @RequestBody 
-        @Parameter(description = "예매 신청 정보") 
+        @RequestBody
+        @Parameter(description = "예매 신청 정보")
         request: ReservationCreateRequest,
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<ReservationResponse>> {
@@ -141,12 +141,12 @@ class ReservationController(
     ])
     @DeleteMapping("/{reservationId}")
     fun cancelReservation(
-        @PathVariable 
-        @Parameter(description = "예매 신청 ID") 
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
         reservationId: Long,
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<Unit>> {
-        // TODO: 예매 취소 로직 구현
+        reservationService.cancelReservation(user, reservationId)
         return ResponseEntity.ok(ApiWrapper.success("예매가 취소되었습니다."))
     }
 
@@ -161,11 +161,11 @@ class ReservationController(
     ])
     @PatchMapping("/{reservationId}/status")
     fun updateReservationStatus(
-        @PathVariable 
-        @Parameter(description = "예매 신청 ID") 
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
         reservationId: Long,
-        @RequestParam 
-        @Parameter(description = "변경할 상태 (APPROVED, REJECTED)") 
+        @RequestParam
+        @Parameter(description = "변경할 상태 (APPROVED, REJECTED)")
         status: String,
         @AuthenticationPrincipal user: User
     ): ResponseEntity<ApiWrapper<Unit>> {

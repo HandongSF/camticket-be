@@ -196,7 +196,7 @@ class ReservationService(
         )
     }
 
-    // 6. 사용자 예매 내역 조회
+    // === 헬퍼 메서드들 ===
     @Transactional(readOnly = true)
     fun getUserReservations(user: User): List<ReservationResponse> {
         val reservations = reservationRequestRepository.findByUserOrderByRegDateDesc(user)
@@ -220,7 +220,48 @@ class ReservationService(
         }
     }
 
-    // === 헬퍼 메서드들 ===
+    // 7. 예매 취소
+    @Transactional
+    fun cancelReservation(user: User, reservationId: Long) {
+        // 예매 신청 조회
+        val reservation = reservationRequestRepository.findById(reservationId)
+            .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+        // 권한 확인: 예매한 본인만 취소 가능
+        if (reservation.user.id != user.id) {
+            throw IllegalArgumentException("예매 취소 권한이 없습니다.")
+        }
+
+        // 취소 가능한 상태 확인 (PENDING만 취소 가능)
+        if (reservation.status != ReservationStatus.PENDING) {
+            throw IllegalArgumentException("취소할 수 없는 예매 상태입니다. 현재 상태: ${reservation.status}")
+        }
+
+        // 예매와 연결된 좌석들 조회
+        val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+
+        // 먼저 예매-좌석 연결 정보 삭제 (순서 중요!)
+        reservationSeats.forEach { reservationSeat ->
+            reservationSeatRepository.delete(reservationSeat)
+        }
+
+        // 그 다음 좌석 상태 처리
+        reservationSeats.forEach { reservationSeat ->
+            val scheduleSeat = reservationSeat.scheduleSeat
+
+            // 좌석이 PENDING 상태였다면 DB에서 삭제 (AVAILABLE 상태로 복원)
+            if (scheduleSeat.status == SeatStatus.PENDING) {
+                scheduleSeatRepository.delete(scheduleSeat)
+            } else {
+                // 다른 상태였다면 AVAILABLE로 변경
+                scheduleSeat.status = SeatStatus.AVAILABLE
+                scheduleSeatRepository.save(scheduleSeat)
+            }
+        }
+
+        // 마지막에 예매 신청 삭제
+        reservationRequestRepository.delete(reservation)
+    }
 
     private fun calculateTotalSeats(schedule: PerformanceSchedule): Int {
         // 실제 구현에서는 좌석 배치에 따라 계산
