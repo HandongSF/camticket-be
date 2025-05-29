@@ -47,6 +47,10 @@ class UserService (
         request.introduction?.let {
             foundUser.introduction = it
         }
+
+        request.bankAccount?.let {
+            foundUser.bankAccount = it
+        }
     }
 
     @Transactional
