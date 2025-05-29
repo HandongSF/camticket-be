@@ -271,4 +271,44 @@ class ReservationController(
         val refunds = reservationService.getRefundRequests(user)
         return ResponseEntity.ok(ApiWrapper.success(refunds, "환불 신청 목록을 조회했습니다."))
     }
+
+    @Operation(
+        summary = "예매 상세 정보 조회 (관람객용)",
+        description = "관람객이 자신의 예매 상세 정보를 조회합니다. 취소/환불 가능 여부도 함께 제공됩니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "예매 상세 정보 조회 성공"),
+        ApiResponse(responseCode = "403", description = "조회 권한 없음"),
+        ApiResponse(responseCode = "404", description = "해당 예매가 존재하지 않음")
+    ])
+    @GetMapping("/{reservationId}/detail")
+    fun getReservationDetail(
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
+        reservationId: Long,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<ReservationDetailResponse>> {
+        val detail = reservationService.getReservationDetail(user, reservationId)
+        return ResponseEntity.ok(ApiWrapper.success(detail, "예매 상세 정보를 조회했습니다."))
+    }
+
+    @Operation(
+        summary = "예매 상세 정보 조회 (관리자용)",
+        description = "관리자가 예매 상세 정보를 조회하고 관리 가능한 액션을 확인합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "예매 상세 정보 조회 성공"),
+        ApiResponse(responseCode = "403", description = "관리 권한 없음"),
+        ApiResponse(responseCode = "404", description = "해당 예매가 존재하지 않음")
+    ])
+    @GetMapping("/management/{reservationId}/detail")
+    fun getAdminReservationDetail(
+        @PathVariable
+        @Parameter(description = "예매 신청 ID")
+        reservationId: Long,
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<AdminReservationDetailResponse>> {
+        val detail = reservationService.getAdminReservationDetail(user, reservationId)
+        return ResponseEntity.ok(ApiWrapper.success(detail, "예매 관리 정보를 조회했습니다."))
+    }
 }

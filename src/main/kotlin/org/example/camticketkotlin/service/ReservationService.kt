@@ -8,8 +8,16 @@ import org.example.camticketkotlin.exception.NotFoundException
 import org.example.camticketkotlin.repository.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.example.camticketkotlin.domain.enums.TicketType  // 이 줄 추가
 import java.time.LocalDateTime
 
+data class Tuple5<T1, T2, T3, T4, T5>(
+    val first: T1,
+    val second: T2,
+    val third: T3,
+    val fourth: T4,
+    val fifth: T5
+)
 @Service
 @Transactional
 class ReservationService(
@@ -614,4 +622,169 @@ class ReservationService(
             }
         }
     }
-}
+        @Transactional(readOnly = true)
+        fun getReservationDetail(user: User, reservationId: Long): ReservationDetailResponse {
+            val reservation = reservationRequestRepository.findById(reservationId)
+                .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+            // 권한 확인: 본인 예매만 조회 가능
+            if (reservation.user.id != user.id) {
+                throw IllegalArgumentException("예매 상세 정보 조회 권한이 없습니다.")
+            }
+
+            val schedule = reservation.performanceSchedule
+            val post = schedule.performancePost
+            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+
+            // 상태별 액션 타입 결정
+            val (actionType, actionDescription, statusDescription) = determineUserAction(reservation)
+
+            return ReservationDetailResponse(
+                reservationId = reservation.id!!,
+                status = reservation.status,
+                statusDescription = statusDescription,
+                actionType = actionType,
+                actionDescription = actionDescription,
+
+                performanceInfo = ReservationDetailResponse.PerformanceInfo(
+                    title = post.title,
+                    category = post.category,
+                    location = post.location,
+                    performanceDate = schedule.startTime,
+                    profileImageUrl = post.profileImageUrl
+                ),
+
+                reservationInfo = ReservationDetailResponse.ReservationInfo(
+                    userNickName = reservation.user.nickName ?: "Unknown",
+                    userEmail = reservation.user.email ?: "Unknown",
+                    ticketCount = reservation.count
+                ),
+
+                seatInfo = ReservationDetailResponse.SeatInfo(
+                    ticketType = post.ticketType,
+                    selectedSeats = seatCodes,
+                    seatDescription = createSeatDescription(post.ticketType, seatCodes, reservation.count)
+                ),
+
+                paymentInfo = ReservationDetailResponse.PaymentInfo(
+                    ticketOptionName = reservation.ticketOption.name,
+                    unitPrice = reservation.ticketOption.price,
+                    quantity = reservation.count,
+                    totalPrice = reservation.ticketOption.price * reservation.count,
+                    priceDescription = "${reservation.ticketOption.name} ${String.format("%,d", reservation.ticketOption.price)}원 × ${reservation.count}매 = ${String.format("%,d", reservation.ticketOption.price * reservation.count)}원"
+                ),
+
+                reservationDate = reservation.regDate!!
+            )
+        }
+
+        // 관리자용 예매 상세 조회
+        @Transactional(readOnly = true)
+        fun getAdminReservationDetail(user: User, reservationId: Long): AdminReservationDetailResponse {
+            val reservation = reservationRequestRepository.findById(reservationId)
+                .orElseThrow { NotFoundException("해당 예매 신청이 존재하지 않습니다.") }
+
+            // 권한 확인: 해당 공연을 등록한 사람만 조회 가능
+            val performanceOwner = reservation.performanceSchedule.performancePost.user
+            if (performanceOwner.id != user.id) {
+                throw IllegalArgumentException("예매 관리 권한이 없습니다.")
+            }
+
+            val schedule = reservation.performanceSchedule
+            val post = schedule.performancePost
+            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+
+            // 관리 가능한 액션 결정
+            val (canApprove, canReject, canRefund, statusDescription, notes) = determineAdminActions(reservation)
+
+            return AdminReservationDetailResponse(
+                reservationId = reservation.id!!,
+                status = reservation.status,
+                statusDescription = statusDescription,
+
+                performanceInfo = AdminReservationDetailResponse.AdminPerformanceInfo(
+                    performanceId = post.id!!,
+                    title = post.title,
+                    category = post.category,
+                    location = post.location,
+                    performanceDate = schedule.startTime,
+                    scheduleId = schedule.id!!,
+                    profileImageUrl = post.profileImageUrl
+                ),
+
+                customerInfo = AdminReservationDetailResponse.CustomerInfo(
+                    userId = reservation.user.id!!,
+                    userName = reservation.user.name ?: "Unknown",
+                    userEmail = reservation.user.email ?: "Unknown",
+                    userNickname = reservation.user.nickName
+                ),
+
+                seatInfo = ReservationDetailResponse.SeatInfo(
+                    ticketType = post.ticketType,
+                    selectedSeats = seatCodes,
+                    seatDescription = createSeatDescription(post.ticketType, seatCodes, reservation.count)
+                ),
+
+                paymentInfo = ReservationDetailResponse.PaymentInfo(
+                    ticketOptionName = reservation.ticketOption.name,
+                    unitPrice = reservation.ticketOption.price,
+                    quantity = reservation.count,
+                    totalPrice = reservation.ticketOption.price * reservation.count,
+                    priceDescription = "${reservation.ticketOption.name} ${String.format("%,d", reservation.ticketOption.price)}원 × ${reservation.count}매 = ${String.format("%,d", reservation.ticketOption.price * reservation.count)}원"
+                ),
+
+                managementInfo = AdminReservationDetailResponse.ManagementInfo(
+                    reservationDate = reservation.regDate!!,
+                    lastModifiedDate = reservation.modDate!!,
+                    canApprove = canApprove,
+                    canReject = canReject,
+                    canRefund = canRefund,
+                    notes = notes
+                )
+            )
+        }
+
+        // 헬퍼 메서드: 사용자 액션 타입 결정
+        private fun determineUserAction(reservation: ReservationRequest): Triple<String, String, String> {
+            return when (reservation.status) {
+                ReservationStatus.PENDING -> Triple("CANCEL", "예매 취소", "예매 신청 중 (취소 가능)")
+                ReservationStatus.APPROVED -> {
+                    val now = LocalDateTime.now()
+                    if (reservation.performanceSchedule.startTime.isBefore(now)) {
+                        Triple("NONE", "처리 완료", "공연 완료")
+                    } else {
+                        Triple("REFUND", "환불 신청", "예매 완료 (환불 신청 가능)")
+                    }
+                }
+                ReservationStatus.REJECTED -> Triple("NONE", "처리 완료", "예매 거절됨")
+                ReservationStatus.REFUND_REQUESTED -> Triple("NONE", "환불 신청 중", "환불 신청 중 (승인 대기)")
+                ReservationStatus.REFUNDED -> Triple("NONE", "처리 완료", "환불 완료")
+            }
+        }
+
+        // 헬퍼 메서드: 관리자 액션 결정
+        private fun determineAdminActions(reservation: ReservationRequest): Tuple5<Boolean, Boolean, Boolean, String, String> {
+            return when (reservation.status) {
+                ReservationStatus.PENDING -> Tuple5(true, true, false, "예매 승인 대기 중", "예매 승인 또는 거절이 필요합니다.")
+                ReservationStatus.APPROVED -> Tuple5(false, false, false, "예매 승인 완료", "예매가 정상적으로 승인되었습니다.")
+                ReservationStatus.REJECTED -> Tuple5(false, false, false, "예매 거절됨", "예매가 거절되었습니다.")
+                ReservationStatus.REFUND_REQUESTED -> Tuple5(false, false, true, "환불 신청 접수", "환불 승인 또는 거절이 필요합니다.")
+                ReservationStatus.REFUNDED -> Tuple5(false, false, false, "환불 처리 완료", "환불이 완료되었습니다.")
+            }
+        }
+
+        // 헬퍼 메서드: 좌석 설명 생성
+        private fun createSeatDescription(ticketType: TicketType, seatCodes: List<String>, count: Int): String {
+            return if (ticketType == TicketType.PAID && seatCodes.isNotEmpty()) {
+                "지정석: ${seatCodes.joinToString(", ")}"
+            } else {
+                "자유석 ${count}매"
+            }
+        }
+    }
+
+
+
+
