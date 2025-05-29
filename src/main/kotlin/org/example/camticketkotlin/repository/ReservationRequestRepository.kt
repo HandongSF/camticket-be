@@ -1,6 +1,6 @@
-// 1. ReservationRequestRepository.kt
 package org.example.camticketkotlin.repository
 
+import org.example.camticketkotlin.domain.PerformanceSchedule
 import org.example.camticketkotlin.domain.ReservationRequest
 import org.example.camticketkotlin.domain.ReservationStatus
 import org.example.camticketkotlin.domain.User
@@ -40,5 +40,11 @@ interface ReservationRequestRepository : JpaRepository<ReservationRequest, Long>
     fun findByPerformanceScheduleIdAndStatusOrderByRegDateDesc(
         scheduleId: Long,
         status: ReservationStatus
+    ): List<ReservationRequest>
+
+    // ReservationRequestRepository에 추가
+    fun findByUserAndPerformanceScheduleOrderByRegDateDesc(
+        user: User,
+        schedule: PerformanceSchedule
     ): List<ReservationRequest>
 }
