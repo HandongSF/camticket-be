@@ -465,12 +465,12 @@ class ReservationService(
             throw IllegalArgumentException("선택한 좌석 수와 예매 수량이 일치하지 않습니다.")
         }
 
-        // 전체 가능한 좌석 범위 체크
-        val validSeatPattern = Regex("^[A-J]([1-9]|10)$")
-        val invalidSeats = seatCodes.filter { !validSeatPattern.matches(it) }
-        if (invalidSeats.isNotEmpty()) {
-            throw IllegalArgumentException("잘못된 좌석 코드입니다: ${invalidSeats.joinToString(", ")}")
-        }
+//        // 전체 가능한 좌석 범위 체크
+//        val validSeatPattern = Regex("^[A-J]([1-9]|10)$")
+//        val invalidSeats = seatCodes.filter { !validSeatPattern.matches(it) }
+//        if (invalidSeats.isNotEmpty()) {
+//            throw IllegalArgumentException("잘못된 좌석 코드입니다: ${invalidSeats.joinToString(", ")}")
+//        }
 
         // DB에서 예외 상태 좌석들만 조회 (UNAVAILABLE, RESERVED, PENDING)
         val exceptionSeats = scheduleSeatRepository.findByPerformanceScheduleIn(listOf(schedule))
