@@ -5,6 +5,7 @@ import org.example.camticketkotlin.domain.enums.Role
 import org.example.camticketkotlin.dto.UserDto
 
 @Entity
+@Table(name = "`user`")
 class User private constructor(
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
