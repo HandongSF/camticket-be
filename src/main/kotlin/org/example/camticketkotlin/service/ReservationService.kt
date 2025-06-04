@@ -648,6 +648,43 @@ class ReservationService(
         }
     }
 
+    @Transactional(readOnly = true)
+    fun getUserReservationsOverview(user: User): List<UserReservationOverviewResponse> {
+        val reservations = reservationRequestRepository.findByUserOrderByRegDateDesc(user)
+
+        return reservations.map { reservation ->
+            val schedule = reservation.performanceSchedule
+            val post = schedule.performancePost
+            val artist = post.user  // 🎭 공연 올린 아티스트
+
+            // 좌석 정보 조회
+            val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+            val seatCodes = reservationSeats.map { it.scheduleSeat.seatCode }
+
+            UserReservationOverviewResponse(
+                reservationId = reservation.id!!,
+                performanceTitle = post.title,
+                performanceDate = schedule.startTime,
+                ticketOptionName = reservation.ticketOption.name,
+                ticketPrice = reservation.ticketOption.price,
+                count = reservation.count,
+                totalPrice = reservation.ticketOption.price * reservation.count,
+                status = reservation.status,
+                selectedSeats = seatCodes,
+                regDate = reservation.regDate!!,
+
+                // ✅ UI에 필요한 추가 정보들
+                reservationStartAt = post.reservationStartAt,
+                reservationEndAt = post.reservationEndAt,
+                location = post.location,
+                locationDisplayName = post.location.displayName,
+                performanceProfileImageUrl = post.profileImageUrl,
+                artistId = artist.id!!,
+                artistName = artist.name,
+                artistProfileImageUrl = artist.profileImageUrl
+            )
+        }
+    }
 
     @Transactional(readOnly = true)
     fun getReservationDetail(user: User, reservationId: Long): ReservationDetailResponse {

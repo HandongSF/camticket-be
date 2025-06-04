@@ -272,7 +272,20 @@ class ReservationController(
         val refunds = reservationService.getRefundRequests(user)
         return ResponseEntity.ok(ApiWrapper.success(refunds, "환불 신청 목록을 조회했습니다."))
     }
-
+    @Operation(
+        summary = "사용자 예매 내역 오버뷰 조회 , 티켓 보기 조회 ",
+        description = "UI에 표시할 예매 내역을 조회합니다. 포스터, 예매 기간, 장소, 아티스트 사진, 좌석 정보 등 상세 정보를 포함합니다."
+    )
+    @ApiResponses(value = [
+        ApiResponse(responseCode = "200", description = "예매 내역 오버뷰 조회 성공")
+    ])
+    @GetMapping("/my-reservations/overview")
+    fun getUserReservationsOverview(
+        @AuthenticationPrincipal user: User
+    ): ResponseEntity<ApiWrapper<List<UserReservationOverviewResponse>>> {
+        val reservations = reservationService.getUserReservationsOverview(user)
+        return ResponseEntity.ok(ApiWrapper.success(reservations, "예매 내역 오버뷰를 조회했습니다."))
+    }
     @Operation(
         summary = "예매 상세 정보 조회 (관람객용)",
         description = "관람객이 자신의 예매 상세 정보를 조회합니다. 취소/환불 가능 여부도 함께 제공됩니다."
