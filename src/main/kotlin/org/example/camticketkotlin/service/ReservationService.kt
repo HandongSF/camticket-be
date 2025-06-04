@@ -146,11 +146,10 @@ class ReservationService(
             throw IllegalArgumentException("티켓 주문 정보가 없습니다.")
         }
 
-        val savedReservations = mutableListOf<ReservationRequest>()
         var totalTicketCount = 0
         var totalPrice = 0
 
-        // 5. 각 티켓 옵션별로 처리
+        // 5. 먼저 수량과 가격만 계산 및 검증 (저장 안함)
         request.ticketOrders.forEach { ticketOrder ->
             // 티켓 옵션 검증
             val ticketOption = ticketOptionRepository.findById(ticketOrder.ticketOptionId)
@@ -167,6 +166,34 @@ class ReservationService(
 
             totalTicketCount += ticketOrder.count
             totalPrice += ticketOption.price * ticketOrder.count
+        }
+
+        // 6. 예매 가능 여부 검사 (저장 전에 체크!)
+        val availability = checkReservationAvailability(user, request.performancePostId)
+
+        if (!availability.isAvailable) {
+            throw IllegalArgumentException(availability.message)
+        }
+
+        if (totalTicketCount > availability.remainingUserQuota) {
+//            println("🚨 수량 초과 에러!")
+//            println("   - 요청 수량: $totalTicketCount")
+//            println("   - 남은 할당량: ${availability.remainingUserQuota}")
+            throw IllegalArgumentException("예매 가능 수량을 초과했습니다.")
+        }
+
+        // 7. 좌석 선택 검증 (지정석인 경우)
+        if (request.selectedSeatCodes.isNotEmpty()) {
+            if (request.selectedSeatCodes.size != totalTicketCount) {
+                throw IllegalArgumentException("선택한 좌석 수와 티켓 수량이 일치하지 않습니다.")
+            }
+            validateSeatSelection(request.selectedSeatCodes, schedule, totalTicketCount)
+        }
+
+        // 8. 이제 실제로 예매 신청 저장
+        val savedReservations = mutableListOf<ReservationRequest>()
+        request.ticketOrders.forEach { ticketOrder ->
+            val ticketOption = ticketOptionRepository.findById(ticketOrder.ticketOptionId).get()
 
             // 예매 신청 생성
             val reservation = ReservationRequest(
@@ -180,31 +207,12 @@ class ReservationService(
             savedReservations.add(reservationRequestRepository.save(reservation))
         }
 
-        // 6. 예매 가능 여부 검사
-        val availability = checkReservationAvailability(user, request.performancePostId)
-
-        if (!availability.isAvailable) {
-            throw IllegalArgumentException(availability.message)
-        }
-
-        if (totalTicketCount > availability.remainingUserQuota) {
-            throw IllegalArgumentException("예매 가능 수량을 초과했습니다.")
-        }
-
-        // 7. 좌석 선택 검증 (지정석인 경우)
-        if (request.selectedSeatCodes.isNotEmpty()) {
-            if (request.selectedSeatCodes.size != totalTicketCount) {
-                throw IllegalArgumentException("선택한 좌석 수와 티켓 수량이 일치하지 않습니다.")
-            }
-            validateSeatSelection(request.selectedSeatCodes, schedule, totalTicketCount)
-        }
-
-        // 8. 좌석 예매 정보 저장 (지정석인 경우) - 첫 번째 예매에만 연결
+        // 9. 좌석 예매 정보 저장 (지정석인 경우) - 첫 번째 예매에만 연결
         if (request.selectedSeatCodes.isNotEmpty() && savedReservations.isNotEmpty()) {
             saveReservationSeats(savedReservations.first(), request.selectedSeatCodes, schedule)
         }
 
-        // 9. 응답 생성 (첫 번째 예매 기준으로 반환)
+        // 10. 응답 생성 (첫 번째 예매 기준으로 반환)
         val mainReservation = savedReservations.first()
         val allTicketOptions = savedReservations.map { "${it.ticketOption.name}(${it.count}매)" }.joinToString(", ")
 
