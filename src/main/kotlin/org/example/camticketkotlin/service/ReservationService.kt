@@ -369,9 +369,15 @@ class ReservationService(
     // 헬퍼 메서드: 좌석 해제 (AVAILABLE로 복원)
     private fun releaseSeats(reservation: ReservationRequest) {
         val reservationSeats = reservationSeatRepository.findByReservationRequest(reservation)
+
+        // 1단계: ReservationSeat 연결 먼저 삭제
+        reservationSeats.forEach { reservationSeat ->
+            reservationSeatRepository.delete(reservationSeat)
+        }
+
+        // 2단계: 그 다음 ScheduleSeat 처리
         reservationSeats.forEach { reservationSeat ->
             val scheduleSeat = reservationSeat.scheduleSeat
-            // PENDING 상태였던 좌석을 DB에서 삭제 (AVAILABLE로 복원)
             if (scheduleSeat.status == SeatStatus.PENDING) {
                 scheduleSeatRepository.delete(scheduleSeat)
             }
