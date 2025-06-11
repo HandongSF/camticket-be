@@ -23,6 +23,8 @@ class PerformanceManagementService(
     private val scheduleSeatRepository: ScheduleSeatRepository,
     private val ticketOptionRepository: TicketOptionRepository,
     private val performanceImageRepository: PerformanceImageRepository,
+    private val reservationRequestRepository: ReservationRequestRepository,
+    private val reservationSeatRepository: ReservationSeatRepository,
     private val s3Uploader: S3Uploader,
 
 
@@ -159,16 +161,32 @@ class PerformanceManagementService(
         val detailImages = performanceImageRepository.findByPerformancePost(post)
         detailImages.forEach { s3Uploader.delete(it.imageUrl) }
 
-        // 3. schedule-seat 삭제
+        // 3. 회차들 조회
         val schedules = performanceScheduleRepository.findByPerformancePost(post)
+
+        // 4. **중요**: 예매 좌석(reservation_seat) 먼저 삭제
+        schedules.forEach { schedule ->
+            val reservationRequests = reservationRequestRepository.findByPerformanceScheduleIdOrderByRegDateDesc(schedule.id!!)
+            reservationRequests.forEach { request ->
+                reservationSeatRepository.deleteByReservationRequest(request)
+            }
+        }
+
+        // 5. 예매 신청(reservation_request) 삭제
+        schedules.forEach { schedule ->
+            val reservationRequests = reservationRequestRepository.findByPerformanceScheduleIdOrderByRegDateDesc(schedule.id!!)
+            reservationRequestRepository.deleteAll(reservationRequests)
+        }
+
+        // 6. 스케줄 좌석(schedule_seat) 삭제
         scheduleSeatRepository.deleteAllByPerformanceScheduleIn(schedules)
 
-        // 4. 하위 연관 엔티티 삭제
+        // 7. 나머지 하위 연관 엔티티 삭제
         ticketOptionRepository.deleteAllByPerformancePost(post)
         performanceImageRepository.deleteAllByPerformancePost(post)
         performanceScheduleRepository.deleteAllByPerformancePost(post)
 
-        // 5. 최종 게시글 삭제
+        // 8. 최종 게시글 삭제
         performancePostRepository.delete(post)
     }
     @Transactional
