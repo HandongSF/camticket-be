@@ -83,8 +83,12 @@ class JwtTokenFilter(
             logger.debug("DB에서 조회된 사용자: ${loginUser.id}, ${loginUser.name}")
 
             setAuthenticationForUser(request, loginUser)
+        } catch (ex: WrongTokenException) {
+            logger.info("JWT 토큰 만료 또는 유효하지 않음: ${ex.message}")
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "로그인이 필요합니다.")
+            return
         } catch (ex: Exception) {
-            logger.warn("JWT 인증 실패: ${ex.message}", ex)
+            logger.error("JWT 인증 중 예상치 못한 오류 발생: ${ex.message}")
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "로그인이 필요합니다.")
             return
         }
