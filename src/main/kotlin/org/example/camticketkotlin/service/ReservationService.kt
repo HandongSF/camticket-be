@@ -56,6 +56,7 @@ class ReservationService(
     }
 
     // 2. 좌석 정보 조회 (지정석인 경우) - 예외 상태만 반환
+    // READ_COMMITTED 격리 수준으로 다른 트랜잭션의 커밋된 PENDING 좌석도 즉시 확인
     @Transactional(readOnly = true)
     fun getSeatInfo(scheduleId: Long): List<SeatInfoResponse> {
         val schedule = performanceScheduleRepository.findById(scheduleId)
@@ -67,6 +68,7 @@ class ReservationService(
         }
 
         // DB에서 예외 상태 좌석들만 조회하여 반환
+        // 커밋된 PENDING 상태 좌석도 다른 사용자에게 "선택 불가"로 보임
         val exceptionSeats = scheduleSeatRepository.findByPerformanceScheduleIn(listOf(schedule))
 
         return exceptionSeats.map { seat ->
@@ -182,12 +184,15 @@ class ReservationService(
             throw IllegalArgumentException("예매 가능 수량을 초과했습니다.")
         }
 
-        // 7. 좌석 선택 검증 (지정석인 경우)
-        if (request.selectedSeatCodes.isNotEmpty()) {
+        // 7. 좌석 먼저 선점 (지정석인 경우) - 별도 트랜잭션으로 즉시 커밋!
+        val lockedSeats = if (request.selectedSeatCodes.isNotEmpty()) {
             if (request.selectedSeatCodes.size != totalTicketCount) {
                 throw IllegalArgumentException("선택한 좌석 수와 티켓 수량이 일치하지 않습니다.")
             }
-            validateSeatSelection(request.selectedSeatCodes, schedule, totalTicketCount)
+            // 좌석 선점 (즉시 커밋됨 → 다른 사용자에게 즉시 PENDING으로 보임)
+            lockSeatsImmediately(request.selectedSeatCodes, schedule)
+        } else {
+            emptyList()
         }
 
         // 8. 이제 실제로 예매 신청 저장
@@ -207,9 +212,9 @@ class ReservationService(
             savedReservations.add(reservationRequestRepository.save(reservation))
         }
 
-        // 9. 좌석 예매 정보 저장 (지정석인 경우) - 첫 번째 예매에만 연결
-        if (request.selectedSeatCodes.isNotEmpty() && savedReservations.isNotEmpty()) {
-            saveReservationSeats(savedReservations.first(), request.selectedSeatCodes, schedule)
+        // 9. 좌석-예매 연결 (지정석인 경우)
+        if (lockedSeats.isNotEmpty() && savedReservations.isNotEmpty()) {
+            linkSeatsToReservation(savedReservations.first(), lockedSeats)
         }
 
         // 10. 응답 생성 (첫 번째 예매 기준으로 반환)
@@ -471,51 +476,70 @@ class ReservationService(
             throw IllegalArgumentException("선택한 좌석 수와 예매 수량이 일치하지 않습니다.")
         }
 
-//        // 전체 가능한 좌석 범위 체크
-//        val validSeatPattern = Regex("^[A-J]([1-9]|10)$")
-//        val invalidSeats = seatCodes.filter { !validSeatPattern.matches(it) }
-//        if (invalidSeats.isNotEmpty()) {
-//            throw IllegalArgumentException("잘못된 좌석 코드입니다: ${invalidSeats.joinToString(", ")}")
-//        }
+        // 일반 조회로 변경 (데드락 방지)
+        // 실제 락은 saveReservationSeats에서만 걸어서 데드락 최소화
+        seatCodes.forEach { seatCode ->
+            val existingSeat = scheduleSeatRepository.findByPerformanceScheduleAndSeatCode(schedule, seatCode)
 
-        // DB에서 예외 상태 좌석들만 조회 (UNAVAILABLE, RESERVED, PENDING)
-        val exceptionSeats = scheduleSeatRepository.findByPerformanceScheduleIn(listOf(schedule))
-            .filter { it.status != SeatStatus.AVAILABLE }
-            .map { it.seatCode }
-
-        // 선택한 좌석 중 예외 상태인 좌석 확인
-        val unavailableSeats = seatCodes.filter { it in exceptionSeats }
-        if (unavailableSeats.isNotEmpty()) {
-            throw IllegalArgumentException("선택할 수 없는 좌석입니다: ${unavailableSeats.joinToString(", ")}")
+            // 좌석이 이미 존재하고 예매 불가 상태인 경우
+            if (existingSeat != null &&
+                (existingSeat.status == SeatStatus.PENDING ||
+                 existingSeat.status == SeatStatus.RESERVED ||
+                 existingSeat.status == SeatStatus.UNAVAILABLE)) {
+                throw IllegalArgumentException("선택할 수 없는 좌석입니다: $seatCode (${existingSeat.status})")
+            }
         }
     }
 
-    private fun saveReservationSeats(reservation: ReservationRequest, seatCodes: List<String>, schedule: PerformanceSchedule) {
-        seatCodes.forEach { seatCode ->
-            // 기존에 해당 좌석 데이터가 있는지 확인
-            val existingSeat = scheduleSeatRepository.findByPerformanceScheduleIn(listOf(schedule))
-                .find { it.seatCode == seatCode }
+    // 좌석 선점 (별도 트랜잭션으로 즉시 커밋)
+    // Gap Lock 데드락 방지를 위해 SELECT FOR UPDATE 제거, INSERT-first 전략 사용
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    fun lockSeatsImmediately(seatCodes: List<String>, schedule: PerformanceSchedule): List<ScheduleSeat> {
+        val lockedSeats = mutableListOf<ScheduleSeat>()
 
-            if (existingSeat != null) {
-                // 기존 좌석 상태를 PENDING으로 업데이트 (입금 확인 전)
-                existingSeat.status = SeatStatus.PENDING
-                scheduleSeatRepository.save(existingSeat)
-            } else {
-                // 새 좌석 데이터 생성 (PENDING 상태로 시작)
+        seatCodes.forEach { seatCode ->
+            try {
+                // ① INSERT-first 전략: 먼저 PENDING으로 INSERT 시도
+                // 이렇게 하면 Gap Lock이 발생하지 않아 데드락 방지
                 val newSeat = ScheduleSeat(
                     seatCode = seatCode,
-                    status = SeatStatus.PENDING,  // ← PENDING으로 시작
+                    status = SeatStatus.PENDING,
                     performanceSchedule = schedule
                 )
-                scheduleSeatRepository.save(newSeat)
-            }
+                val saved = scheduleSeatRepository.save(newSeat)
+                lockedSeats.add(saved)
 
-            // 예매 좌석 연결 정보 저장
+            } catch (e: org.springframework.dao.DataIntegrityViolationException) {
+                // ② 유니크 제약조건 위반 = 이미 좌석이 존재함
+                // 이 경우에만 SELECT FOR UPDATE로 조회 후 상태 확인
+                val existingSeat = scheduleSeatRepository.findByScheduleAndSeatCodeWithLock(schedule, seatCode)
+                    ?: throw IllegalArgumentException("좌석 조회 실패: $seatCode")
+
+                // 기존 좌석이 이미 선택/예매된 상태인지 확인
+                if (existingSeat.status == SeatStatus.PENDING ||
+                    existingSeat.status == SeatStatus.RESERVED ||
+                    existingSeat.status == SeatStatus.UNAVAILABLE) {
+                    throw IllegalArgumentException("이미 선택된 좌석입니다: $seatCode (${existingSeat.status})")
+                }
+
+                // AVAILABLE 상태 → PENDING으로 변경
+                existingSeat.status = SeatStatus.PENDING
+                val updated = scheduleSeatRepository.save(existingSeat)
+                lockedSeats.add(updated)
+            }
+        }
+
+        // 이 메서드가 끝나면 즉시 커밋됨 → 다른 사용자에게 즉시 PENDING으로 보임
+        return lockedSeats
+    }
+
+    // 예매-좌석 연결 (메인 트랜잭션에서 호출)
+    private fun linkSeatsToReservation(reservation: ReservationRequest, seats: List<ScheduleSeat>) {
+        seats.forEach { scheduleSeat ->
             reservationSeatRepository.save(
                 ReservationSeat(
                     reservationRequest = reservation,
-                    scheduleSeat = scheduleSeatRepository.findByPerformanceScheduleIn(listOf(schedule))
-                        .find { it.seatCode == seatCode }!!
+                    scheduleSeat = scheduleSeat
                 )
             )
         }
