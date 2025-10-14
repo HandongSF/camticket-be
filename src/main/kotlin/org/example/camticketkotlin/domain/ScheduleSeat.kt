@@ -3,6 +3,14 @@ package org.example.camticketkotlin.domain
 import jakarta.persistence.*
 
 @Entity
+@Table(
+    uniqueConstraints = [
+        UniqueConstraint(
+            name = "uk_schedule_seat_code",
+            columnNames = ["performance_schedule_id", "seat_code"]
+        )
+    ]
+)
 class ScheduleSeat(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -18,4 +26,4 @@ class ScheduleSeat(
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "performance_schedule_id", nullable = false)
     var performanceSchedule: PerformanceSchedule
-)
+) : BaseEntity()
