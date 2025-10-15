@@ -150,9 +150,8 @@ class PerformanceManagementService(
         val post = performancePostRepository.findById(postId)
             .orElseThrow { NotFoundException("해당 공연 게시글이 존재하지 않습니다.") }
 
-        if (post.user.id != user.id) {
-            throw UnauthorizedAccessException()
-        }
+        // DDD: 도메인 로직 사용
+        require(post.isOwnedBy(user.id!!)) { throw UnauthorizedAccessException() }
 
         // 1. 프로필 이미지 삭제
         s3Uploader.delete(post.profileImageUrl)
@@ -200,10 +199,23 @@ class PerformanceManagementService(
         val post = performancePostRepository.findById(postId)
             .orElseThrow { NotFoundException("해당 게시글이 존재하지 않습니다.") }
 
-        if (post.user.id != user.id) throw UnauthorizedAccessException()
+        // DDD: 도메인 로직 사용
+        require(post.isOwnedBy(user.id!!)) { throw UnauthorizedAccessException() }
 
-        // 2. 공연 게시글 기본 정보 수정
-        post.updateFromDto(request)
+        // 2. DDD: 도메인 로직으로 공연 정보 수정
+        post.updateDetails(
+            newTitle = request.title,
+            newCategory = request.category,
+            newLocation = request.location,
+            newTicketType = request.ticketType,
+            newMaxTicketsPerUser = request.maxTicketsPerUser,
+            newBackAccount = request.backAccount,
+            newReservationStartAt = request.reservationStartAt,
+            newReservationEndAt = request.reservationEndAt,
+            newTimeNotice = request.timeNotice,
+            newPriceNotice = request.priceNotice,
+            newReservationNotice = request.reservationNotice
+        )
 
         // 3. 기존 회차 조회
         val existingSchedules = performanceScheduleRepository.findByPerformancePost(post)
@@ -252,11 +264,11 @@ class PerformanceManagementService(
             throw IllegalArgumentException("상세 이미지는 최대 4장까지만 등록 가능합니다.")
         }
 
-        // 10. 새 이미지 업로드 및 저장
+        // 10. DDD: 팩토리 메서드를 사용하여 새 이미지 업로드 및 저장
         val newUrls = s3Uploader.upload(newDetailImages, "camticket/detail")
         newUrls.forEach { imageUrl ->
             performanceImageRepository.save(
-                PerformanceImage(imageUrl = imageUrl, performancePost = post)
+                PerformanceImage.create(imageUrl, post)
             )
         }
 

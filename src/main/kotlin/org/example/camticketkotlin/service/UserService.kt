@@ -28,6 +28,7 @@ class UserService (
         val foundUser = userRepository.findById(user.id!!)
             .orElseThrow { NotFoundException("해당 유저가 존재하지 않습니다.") }
 
+        // 닉네임 중복 검증 (Application Service 레벨 - DB 조회 필요)
         request.nickName?.let { newNickName ->
             if (newNickName.length < 2) {
                 throw IllegalArgumentException("닉네임은 최소 2글자 이상이어야 합니다.")
@@ -40,17 +41,16 @@ class UserService (
             if (isDuplicate) {
                 throw IllegalArgumentException("이미 사용 중인 닉네임입니다.")
             }
-
-            foundUser.nickName = newNickName
         }
 
-        request.introduction?.let {
-            foundUser.introduction = it
-        }
+        // DDD: 도메인 로직 호출 (검증 + 업데이트)
+        foundUser.updateProfile(
+            newNickName = request.nickName,
+            newIntroduction = request.introduction,
+            newBankAccount = request.bankAccount
+        )
 
-        request.bankAccount?.let {
-            foundUser.bankAccount = it
-        }
+        userRepository.save(foundUser)
     }
 
     @Transactional
@@ -60,15 +60,20 @@ class UserService (
 
         logger.info("🔍 기존 프로필 이미지 URL: ${foundUser.profileImageUrl}")
 
+        // 기존 이미지 삭제 (Infrastructure 계층)
         foundUser.profileImageUrl?.let {
             logger.info("🗑️ S3에서 기존 이미지 삭제 시도: $it")
             s3Uploader.delete(it)  // S3Uploader 내부에서 prefix 체크 + 예외 처리
         }
 
+        // 새 이미지 업로드 (Infrastructure 계층)
         val uploadedUrl = s3Uploader.upload(newImage, "camticket/user")
         logger.info("✅ 새 프로필 이미지 업로드 완료: $uploadedUrl")
 
-        foundUser.profileImageUrl = uploadedUrl
+        // DDD: 도메인 로직 호출 (검증 + 업데이트)
+        foundUser.updateProfileImage(uploadedUrl)
+        userRepository.save(foundUser)
+
         return uploadedUrl
     }
 
