@@ -27,7 +27,8 @@ class ReservationService(
     private val performanceScheduleRepository: PerformanceScheduleRepository,
     private val performancePostRepository: PerformancePostRepository,
     private val ticketOptionRepository: TicketOptionRepository,
-    private val scheduleSeatRepository: ScheduleSeatRepository
+    private val scheduleSeatRepository: ScheduleSeatRepository,
+    private val seatLockingDomainService: org.example.camticketkotlin.domain.service.SeatLockingDomainService
 ) {
 
     // 1. 공연 회차 목록 조회
@@ -48,9 +49,8 @@ class ReservationService(
                 startTime = schedule.startTime,
                 availableSeats = availableSeats,
                 totalSeats = totalSeats,
-                isBookingAvailable = availableSeats > 0 &&
-                        post.reservationStartAt <= LocalDateTime.now() &&
-                        post.reservationEndAt >= LocalDateTime.now()
+                // DDD: 도메인 모델의 비즈니스 로직 사용
+                isBookingAvailable = availableSeats > 0 && post.isReservationOpen()
             )
         }
     }
@@ -184,13 +184,13 @@ class ReservationService(
             throw IllegalArgumentException("예매 가능 수량을 초과했습니다.")
         }
 
-        // 7. 좌석 먼저 선점 (지정석인 경우) - 별도 트랜잭션으로 즉시 커밋!
+        // 7. 좌석 먼저 선점 (지정석인 경우) - Domain Service 호출 (별도 트랜잭션으로 즉시 커밋!)
         val lockedSeats = if (request.selectedSeatCodes.isNotEmpty()) {
             if (request.selectedSeatCodes.size != totalTicketCount) {
                 throw IllegalArgumentException("선택한 좌석 수와 티켓 수량이 일치하지 않습니다.")
             }
-            // 좌석 선점 (즉시 커밋됨 → 다른 사용자에게 즉시 PENDING으로 보임)
-            lockSeatsImmediately(request.selectedSeatCodes, schedule)
+            // DDD: Domain Service를 통한 좌석 선점 (즉시 커밋됨 → 다른 사용자에게 즉시 PENDING으로 보임)
+            seatLockingDomainService.lockSeats(request.selectedSeatCodes, schedule)
         } else {
             emptyList()
         }
@@ -285,38 +285,37 @@ class ReservationService(
 
         // 권한 확인: 해당 공연을 등록한 사람만 상태 변경 가능
         val performanceOwner = reservation.performanceSchedule.performancePost.user
-        if (performanceOwner.id != user.id) {
-            throw IllegalArgumentException("예매 상태 변경 권한이 없습니다.")
-        }
+        require(performanceOwner.isOwnedBy(user.id!!)) { "예매 상태 변경 권한이 없습니다." }
 
         // 상태 변환 및 유효성 검사
         val targetStatus = try {
             ReservationStatus.valueOf(newStatus.uppercase())
-        } catch (e: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             throw IllegalArgumentException("잘못된 예매 상태입니다: $newStatus")
         }
 
-        // PENDING 상태에서만 변경 가능
-        if (reservation.status != ReservationStatus.PENDING) {
-            throw IllegalArgumentException("PENDING 상태의 예매만 승인/거절할 수 있습니다. 현재 상태: ${reservation.status}")
-        }
-
-        // 상태 업데이트
-        reservation.status = targetStatus
-        reservationRequestRepository.save(reservation)
-
-        // 좌석 상태 업데이트
+        // DDD: 도메인 로직 사용하여 상태 변경
         when (targetStatus) {
             ReservationStatus.APPROVED -> {
-                // 승인 시: 좌석을 RESERVED로 변경
-                updateSeatsStatus(reservation, SeatStatus.RESERVED)
+                // 승인 시: 도메인 메서드 호출 후 좌석 상태 업데이트
+                reservation.approve()
+                reservationRequestRepository.save(reservation)
+                // 좌석을 RESERVED로 변경
+                val seats = reservationSeatRepository.findByReservationRequest(reservation)
+                    .map { it.scheduleSeat }
+                seatLockingDomainService.confirmReservation(seats)
             }
             ReservationStatus.REJECTED -> {
-                // 거절 시: 좌석을 다시 AVAILABLE로 복원 (PENDING 데이터 삭제)
-                releaseSeats(reservation)
+                // 거절 시: 도메인 메서드 호출 후 좌석 해제
+                reservation.reject()
+                reservationRequestRepository.save(reservation)
+                // 좌석을 다시 AVAILABLE로 복원 (PENDING 데이터 삭제)
+                val seats = reservationSeatRepository.findByReservationRequest(reservation)
+                    .map { it.scheduleSeat }
+                seatLockingDomainService.releaseSeats(seats)
             }
             else -> {
-                // PENDING 상태로는 변경하지 않음
+                throw IllegalArgumentException("APPROVED 또는 REJECTED 상태로만 변경 가능합니다.")
             }
         }
     }
@@ -493,54 +492,22 @@ class ReservationService(
 
     // 좌석 선점 (별도 트랜잭션으로 즉시 커밋)
     // Gap Lock 데드락 방지를 위해 SELECT FOR UPDATE 제거, INSERT-first 전략 사용
+    //
+    // DDD: 이 메서드는 더 이상 직접 사용되지 않습니다.
+    // 대신 SeatLockingDomainService.lockSeats()를 사용하세요.
+    @Deprecated("Use SeatLockingDomainService.lockSeats() instead")
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     fun lockSeatsImmediately(seatCodes: List<String>, schedule: PerformanceSchedule): List<ScheduleSeat> {
-        val lockedSeats = mutableListOf<ScheduleSeat>()
-
-        seatCodes.forEach { seatCode ->
-            try {
-                // ① INSERT-first 전략: 먼저 PENDING으로 INSERT 시도
-                // 이렇게 하면 Gap Lock이 발생하지 않아 데드락 방지
-                val newSeat = ScheduleSeat(
-                    seatCode = seatCode,
-                    status = SeatStatus.PENDING,
-                    performanceSchedule = schedule
-                )
-                val saved = scheduleSeatRepository.save(newSeat)
-                lockedSeats.add(saved)
-
-            } catch (e: org.springframework.dao.DataIntegrityViolationException) {
-                // ② 유니크 제약조건 위반 = 이미 좌석이 존재함
-                // 이 경우에만 SELECT FOR UPDATE로 조회 후 상태 확인
-                val existingSeat = scheduleSeatRepository.findByScheduleAndSeatCodeWithLock(schedule, seatCode)
-                    ?: throw IllegalArgumentException("좌석 조회 실패: $seatCode")
-
-                // 기존 좌석이 이미 선택/예매된 상태인지 확인
-                if (existingSeat.status == SeatStatus.PENDING ||
-                    existingSeat.status == SeatStatus.RESERVED ||
-                    existingSeat.status == SeatStatus.UNAVAILABLE) {
-                    throw IllegalArgumentException("이미 선택된 좌석입니다: $seatCode (${existingSeat.status})")
-                }
-
-                // AVAILABLE 상태 → PENDING으로 변경
-                existingSeat.status = SeatStatus.PENDING
-                val updated = scheduleSeatRepository.save(existingSeat)
-                lockedSeats.add(updated)
-            }
-        }
-
-        // 이 메서드가 끝나면 즉시 커밋됨 → 다른 사용자에게 즉시 PENDING으로 보임
-        return lockedSeats
+        // DDD: Domain Service로 위임
+        return seatLockingDomainService.lockSeats(seatCodes, schedule)
     }
 
     // 예매-좌석 연결 (메인 트랜잭션에서 호출)
     private fun linkSeatsToReservation(reservation: ReservationRequest, seats: List<ScheduleSeat>) {
         seats.forEach { scheduleSeat ->
+            // DDD: 팩토리 메서드를 사용하여 예매-좌석 연결 생성 (도메인 검증 포함)
             reservationSeatRepository.save(
-                ReservationSeat(
-                    reservationRequest = reservation,
-                    scheduleSeat = scheduleSeat
-                )
+                ReservationSeat.create(reservation, scheduleSeat)
             )
         }
     }
